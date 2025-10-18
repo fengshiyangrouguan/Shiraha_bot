@@ -1,0 +1,22 @@
+# config.toml 示例
+
+[system]
+log_level = "INFO"
+
+[core.llm]
+model_name = "gpt-4o"
+api_key = "sk-..."
+
+[platform.qq]
+enabled = true
+host = "127.0.0.1"    # 你的 QQAdapter 监听的地址
+port = 8080        # 你的 QQAdapter 监听的端口
+max_size = 67108864 # 64MB
+
+[platform.wechat]
+enabled = false
+# ...
+
+[tools.n8n]
+enabled = true
+webhook_url = "http://n8n.example.com/webhook"
