@@ -30,7 +30,12 @@
     ```bash
     pip install -r requirements.txt
     ```
+4.  **股票分析模型配置**
+    股票模型请放入`src/plugins/utils/`文件夹，命名为`policy_final.pt`
 
+5.  **配置LLM**
+    请按照 `3. LLM 模型配置`完成配置
+    
 ### 1.3. 运行项目
 
 本项目提供了两种运行模式：
@@ -107,10 +112,11 @@ graph TD
 ### 3.1. 当前配置方式
 请在根目录新建.env文件
 #### 模板：
+```
 DEEPSEEK_API_KEY="你的key"
 DEEPSEEK_BASE_URL="https://api.siliconflow.cn/v1/"
 DEEPSEEK_MODEL_NAME="Pro/deepseek-ai/DeepSeek-V3"
-
+```
 ---
 
 ## 4. Prompt 修改指引
