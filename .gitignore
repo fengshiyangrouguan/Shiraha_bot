@@ -1,3 +1,5 @@
 __pycache__/
 venv/
 .env
+data/invest_data
+src/plugins/utils/policy_final.pt
