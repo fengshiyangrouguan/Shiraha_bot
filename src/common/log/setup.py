@@ -5,7 +5,7 @@ from datetime import datetime
 from .config import LOG_DIR
 from .formatters import PlainFormatter, EmojiFormatter
 
-def setup_logging(logger_name="root", gui_widget=None):
+def setup_logging(logger_name="ROOT", gui_widget=None):
     """
     初始化指定名称的日志记录器
     :param logger_name: 日志记录器名称
@@ -40,4 +40,6 @@ def setup_global_logging():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
+
+    return root_logger
 
