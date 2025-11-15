@@ -1,5 +1,98 @@
+# =========================
+# Python 基本缓存 / 编译文件
+# =========================
 __pycache__/
+*.py[cod]
+*$py.class
+
+# C 扩展
+*.so
+
+# =========================
+# 虚拟环境
+# =========================
+# 常见命名：venv / .venv / env / .env
 venv/
-.env
+.venv/
+env/
+.env/
+
+# pipenv
+Pipfile.lock
+
+# poetry
+.poetry/
+poetry.lock
+
+# conda
+.conda/
+conda-env/
+
+# =========================
+# 日志 / 运行时文件
+# =========================
+*.log
+logs/
+*.pid
+*.csv
+*.tmp
+*.bak
+*.swp
+
+# =========================
+# 测试 / 覆盖率
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# =========================
+# 打包 / 发布
+# =========================
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# =========================
+# Jupyter / 临时文件
+# =========================
+.ipynb_checkpoints/
+*.ipynb~
+*.orig
+
+# =========================
+# IDE / 编辑器
+# =========================
+
+# PyCharm / IntelliJ
+.idea/
+
+# VS Code
+.vscode/
+
+# Vim
+*~
+*.swo
+*.swp
+
+# =========================
+# OS 级别
+# =========================
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# =========================
+# 其他你项目中特有的东西（可以按需加）
+# =========================
 data/invest_data
 src/plugins/utils/policy_final.pt
