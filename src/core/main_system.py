@@ -8,7 +8,7 @@ from src.plugin_system.manager import PluginManager
 from src.plugin_system.plugin_planner import Planner
 from src.core.event_manager import EventManager
 from src.platform.platform_manager import PlatformManager
-
+from src.core.chat.event_processor import EventProcessor
 
 logger = get_logger("main")
 
@@ -54,9 +54,10 @@ class MainSystem:
         # logger.info("API服务器启动成功")
 
         self.event_manager = EventManager()
+        self.event_processor = EventProcessor()
         self.platform_manager = PlatformManager(self.event_manager.post)
         # 将事件处理器注册到事件管理器
-        self.event_manager.register_event_handler(chat.message_process)
+        self.event_manager.register_event_handler(self.event_processor.process_event)
 
 
         try:

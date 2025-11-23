@@ -1,0 +1,9 @@
+[
+    {
+        "name": "QQ_napcat",
+        "enabled": true,
+        "id": "qq_test_instance",
+        "host": "127.0.0.1",
+        "port": 8080
+    }
+]

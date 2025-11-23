@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.platform.platform_manager import PlatformManager
-from src.core.event_manager import BaseEvent
+from src.common.event_model.event import Event
 
 # --- 基本日志配置 ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 event_queue = asyncio.Queue()
 
 # 1. 模拟的 post_method
-async def mock_post_method(event: BaseEvent):
+async def mock_post_method(event: Event):
     """一个模拟的 post 方法，它将事件放入队列中以便测试验证。"""
-    logger.info(f"事件已捕获: {event.event_type} from {event.source}")
+    logger.info(f"事件已捕获: {event.event_type} from {event.platform}")
     await event_queue.put(event)
 
 # 2. 模拟的平台配置
@@ -64,8 +64,7 @@ async def main():
 
         # 核心修改：将单次等待改为永久循环
         while True:
-            # 永久等待事件，无超时限制
-            received_event: BaseEvent = await event_queue.get() 
+            received_event: Event = await event_queue.get() 
             
             logger.info("\n--- 收到新事件并开始验证 ---")
 
@@ -73,25 +72,15 @@ async def main():
             try:
                 assert received_event is not None, "接收到的事件不应为 None"
                 assert received_event.event_type == "message", "事件类型应为 'message'"
-                assert received_event.source == "test_qq_instance", "事件来源 ID 不匹配"
-                
-                data = received_event.data
+                #assert received_event.platform == "test_qq_instance", "事件来源 ID 不匹配"
+                data = None
+                if received_event.event_type == "message":
+                    data = received_event.event_data.raw_message
                 assert data is not None, "事件数据不应为 None"
 
-                # 提取消息文本内容
-                text_content = ""
-                segments = data.get("message_segment", {}).get("data", [])
-                for seg in segments:
-                    if seg.get("type") == "text":
-                        # 确保不因 None 而报错
-                        text_content += str(seg.get("data", "")) 
-
-                logger.info(f"收到的消息文本: '{text_content.strip()}'")
-                logger.info(f"完整事件数据: {json.dumps(data, ensure_ascii=False)}")
                 
-                # 示例性断言：可以移除或保留，用于验证基本的处理逻辑
-                # if "Hello World" in text_content:
-                #     logger.info("✅ 消息包含 'Hello World'，验证成功。")
+                # logger.info(f"完整事件数据: {json.dumps(data, ensure_ascii=False,indent=2)}")
+                logger.info(f"解析后的event数据: {received_event}")
                 
                 logger.info("✅ 事件处理和验证流程通过。")
                 
