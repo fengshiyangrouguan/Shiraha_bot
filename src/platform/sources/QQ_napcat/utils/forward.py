@@ -54,10 +54,10 @@ def parse_qq_forward_xml(xml_content: Optional[str]) -> str:
         ...
         查看20条转发消息
     
-    若解析失败，返回 "[聊天记录]"
+    若解析失败，返回空
     """
     if not xml_content or not isinstance(xml_content, str):
-        return "[聊天记录]"
+        return None
 
     try:
         # 1. 使用正则提取所有 <title> 和 <summary> 的内部文本
@@ -94,8 +94,8 @@ def parse_qq_forward_xml(xml_content: Optional[str]) -> str:
         if result_lines:
             return "\n".join(result_lines)
         else:
-            return "一个[聊天记录]，但是网卡了没加载出来"
+            return None
 
     except Exception:
         # 任何异常都 fallback
-        return "一个[聊天记录]，但是网卡了没加载出来"
+        return None

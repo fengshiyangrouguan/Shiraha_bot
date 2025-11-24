@@ -1,152 +1,112 @@
 import asyncio
 import json
 import time
-import functools
-import websockets as Server
-from typing import Any, Dict, List, Optional
 import logging
+import websockets as Server
+from websockets.protocol import State # <-- 导入 State
 
-# 导入适配器基类和新的标准化事件模型以及实体类
+from typing import Any, Dict, Optional
+
 from src.platform.platform_base import PlatformAdapterBase, PostMethod
-from src.common.event_model.event import Event
-from src.platform.sources.QQ_napcat.utils import parse
+from src.platform.sources.QQ_napcat.service.event_dispatcher import NapcatEventDispatcher
+from src.platform.sources.QQ_napcat.service.message_service import NapcatMessageService
+from src.platform.sources.QQ_napcat.service.command_service import NapcatCommandService
 
 logger = logging.getLogger(__name__)
 
-# 定义可配置的常量
-RECONNECT_DELAY = 30  # 秒，连接断开后尝试重连的延迟时间
+
+RECONNECT_DELAY = 30  # seconds
+
 
 class QQNapcatAdapter(PlatformAdapterBase):
     """
-    使用Napcat的QQ 平台适配器。
-    - 作为反向 WebSocket 服务器运行。
-    - 对消息进行标准化处理。
-    - 处理心跳事件并实现自动重连。
+    新结构的 QQ Napcat Adapter：
+    - 连接管理
+    - JSON 接收循环
+    - 调用 EventDispatcher 解析事件
+    - MessageAPI & CommandAPI 提供消息与命令能力
     """
 
     def __init__(self, post_method: PostMethod, platform_config: Dict[str, Any]):
-        """
-        初始化 QQNapcatAdapter。
-
-        Args:
-            post_method (PostMethod): 一个异步函数，用于将事件提交给 EventManager。
-                                      这个方法通常是 `main_system.event_manager.post`。
-            platform_config (Dict[str, Any]): 该适配器的配置信息，包括 host, port, id 等。
-        """
         super().__init__(post_method, platform_config)
-        self.host = self.config.get("host", "127.0.0.1")  # 监听地址
-        self.port = self.config.get("port", 8080)        # 监听端口
-        
-        # 状态管理
-        self._server_task: asyncio.Task | None = None          # WebSocket 服务器的运行任务
-        self._websocket: Server.WebSocketServerProtocol | None = None # 当前活动的 WebSocket 连接
-        self._heartbeat_checker_task: asyncio.Task | None = None # 心跳检测任务
-        self.last_heartbeat: float = 0.0                       # 最后一次收到心跳的时间戳
-        self.heartbeat_interval: float = 30.0                  # 心跳间隔 (秒)，从 Napcat 的心跳事件中更新
+
+        self.host = self.config.get("host", "127.0.0.1")
+        self.port = self.config.get("port", 8080)
+
+        # WebSocket 状态
+        self._server_task: Optional[asyncio.Task] = None
+        self._websocket: Optional[Server.WebSocketServerProtocol] = None
+
+        # 心跳检测
+        self.last_heartbeat: float = 0
+        self.heartbeat_interval: float = 30
+        self._heartbeat_checker_task: Optional[asyncio.Task] = None
+
+        # 初始化：事件接收分发器和消息/命令服务 ----
+        self.dispatcher = NapcatEventDispatcher(self)
+        self.message_api = NapcatMessageService(self)
+        self.command_api = NapcatCommandService(self)
+
+    # ======== 生命周期管理 ========
 
     def run(self) -> asyncio.Task:
-        """
-        启动适配器，开始监听 WebSocket 连接。
-        """
-        adapter_id = self.get_metadata()["id"]
-        logger.info(f"准备启动 QQ_Napcat 适配器 '{adapter_id}'，监听地址: ws://{self.host}:{self.port}")
-        self._is_running = True  # 设置运行标志
-        self._server_task = asyncio.create_task(self._run_server_with_reconnect())
+        logger.info(f"[QQNapcat] 准备启动 websocket 服务 ws://{self.host}:{self.port}")
+        self._is_running = True
+        self._server_task = asyncio.create_task(self._run_server())
         return self._server_task
 
-    async def _run_server_with_reconnect(self):
-        """
-        运行 WebSocket 服务器的核心循环，包含自动重连逻辑。
+    async def terminate(self):
+        logger.info("[QQNapcat] 停止 Napcat adapter...")
+        self._is_running = False
 
-        """
-        adapter_id = self.get_metadata()["id"]
+        if self._websocket and self._websocket.open:
+            await self._websocket.close()
+
+        if self._heartbeat_checker_task:
+            self._heartbeat_checker_task.cancel()
+
+        if self._server_task:
+            self._server_task.cancel()
+            try:
+                await self._server_task
+            except asyncio.CancelledError:
+                pass
+
+        logger.info("[QQNapcat] 适配器已停止")
+
+    # ======== WebSocket server logic ========
+
+    async def _run_server(self):
         while self._is_running:
             try:
-                logger.info(f"正在启动 QQ_Napcat 服务器 '{adapter_id}'...")
-                # 使用 async with 确保服务器在退出时被正确关闭
-                async with Server.serve(self._connection_handler, self.host, self.port, max_size=2**26) as server:
-                    # 等待服务器关闭。在正常连接时，此行会一直阻塞。
+                async with Server.serve(
+                    self._connection_handler, self.host, self.port, max_size=2**26
+                ) as server:
+                    logger.info("[QQNapcat] 服务器启动成功，等待客户端连接...")
                     await server.wait_closed()
-            except (OSError, Server.exceptions.WebSocketException) as e:
-                # 捕获网络或 WebSocket 相关的启动/运行错误
-                logger.error(f"QQ_Napcat 服务器 '{adapter_id}' 出现网络或启动错误: {e}", exc_info=True)
-                # 报告连接失败事件，允许 MainSystem 的 EventManager 处理
-                # self.commit_event(Event(
-                #     event_type="platform_connection_failed",
-                #     platform=adapter_id,
-                #     event_data={"adapter_id": adapter_id, "error": str(e)}
-                # ))
+
             except Exception as e:
-                # 捕获其他无法恢复的通用错误
-                logger.error(f"QQ_Napcat 服务器 '{adapter_id}' 出现无法恢复的错误: {e}", exc_info=True)
+                logger.error(f"[QQNapcat] 服务器异常：{e}", exc_info=True)
 
             if not self._is_running:
-                break  # 如果适配器被请求停止，则退出重连循环
+                break
 
-            logger.info(f"连接已断开或服务器已停止，将在 {RECONNECT_DELAY} 秒后尝试重连...")
-            # 报告断开连接事件
-            # self.commit_event(BaseEvent(
-            #     event_type="platform_disconnected",
-            #     source=adapter_id,
-            #     data={"adapter_id": adapter_id, "reconnect_delay": RECONNECT_DELAY}
-            # ))
-            # await asyncio.sleep(RECONNECT_DELAY) # 等待指定时间后尝试重连
+            logger.warning(f"[QQNapcat] 连接断开，将在 {RECONNECT_DELAY}s 后重试")
+            await asyncio.sleep(RECONNECT_DELAY)
+
 
     async def _connection_handler(self, websocket: Server.WebSocketServerProtocol):
-        """
-        处理单个 WebSocket 连接。
-        """
-        self._websocket = websocket # 存储当前活动的 WebSocket 连接
+        """处理 websocket 连接生命周期"""
+
+        self._websocket = websocket
         adapter_id = self.get_metadata()["id"]
         logger.info(f"QQ_Napcat 客户端已连接到适配器 '{adapter_id}' ({websocket.remote_address})。")
-
         final_code = 1000 # 默认正常关闭
         final_reason = "Normal Closure"
 
         try:
-            # 持续接收来自客户端的原始消息
-            async for raw_message in websocket:
-                try:
-                    event_dict: dict = json.loads(raw_message) # 解析 JSON 格式的 OneBot V11 事件
-                    post_type = event_dict.get("post_type")
-
-                    # 用于临时研究napcat输出格式用的
-                    print(json.dumps(event_dict, ensure_ascii=False, indent=2))
-
-                    if post_type == "message":
-                        # 解析为message类
-                        message_data = parse._parse_message_data(event_dict)
-                        user_info = parse._parse_user_info(event_dict)
-                        conversation_info = parse._parse_conversation_info(event_dict)
-
-                        # 创建 Event，将 message_data、conversation_info、user_info 放入 event_data
-                        event = Event(
-                            event_type="message",
-                            event_id=str(object=event_dict.get("message_id", time.time())),
-                            time=event_dict.get("time", int(time.time())),
-                            platform="qq",
-                            conversation_info=conversation_info,
-                            user_info=user_info,
-                            event_data=message_data
-                        )
-                        
-                        # 将完整的 Event 提交到中央事件队列
-                        self.commit_event(event)
-
-                    elif post_type == "notice":
-                        # 未来可以在这里标准化并提交通知事件
-                        logger.debug(f"收到通知事件: {event_dict}")
-                        # 提交一个 Event
-                        # self.commit_event(BaseEvent("notice", adapter_id, event_data))
-                    elif post_type == "meta_event":
-                        # 处理元事件（如心跳、生命周期事件）
-                        # 不进入 Event 队列
-                        await self._handle_meta_event(event_dict)
-
-                except json.JSONDecodeError:
-                    logger.warning(f"收到了无法解析的 JSON 数据: {raw_message}")
-                except Exception as e:
-                    logger.error(f"处理接收到的事件时出错: {e}", exc_info=True)
+            async for raw_text in websocket:
+                await self._on_raw_message(raw_text)
 
         except asyncio.CancelledError:
             # Ctrl+C 或 terminate() 触发
@@ -158,7 +118,7 @@ class QQNapcatAdapter(PlatformAdapterBase):
             # 客户端或网络主动断开
             final_code = e.code
             final_reason = e.reason or "Client Disconnected"
-            logger.warning(f"OneBot V11 客户端连接已关闭: {websocket.remote_address} (Code: {final_code}, Reason: {final_reason})")
+            logger.warning(f"QQ_Napcat 客户端连接已关闭: {websocket.remote_address} (Code: {final_code}, Reason: {final_reason})")
         
         except Exception as e:
             # 捕获其他意外错误
@@ -169,45 +129,55 @@ class QQNapcatAdapter(PlatformAdapterBase):
             self._websocket = None # 清除当前 WebSocket 连接引用
             # 取消心跳检查任务
             if self._heartbeat_checker_task and not self._heartbeat_checker_task.done():
-                self._heartbeat_checker_task.cancel()
-            
+                self._heartbeat_checker_task.cancel()        
             # 报告连接已关闭事件 (现在使用已赋值的 final_code/reason)
-            # self.commit_event(BaseEvent(
-    
-    async def _send_reply(self, user_id: str, group_id: Optional[str], segments: List[Dict[str, Any]], at_sender: bool):
-        """
-        异步方法：发送回复消息的辅助方法。
-        这个方法被 `functools.partial` 包装后作为 `BaseEvent` 的回复函数。
-        它负责根据消息类型（群聊或私聊）构造 OneBot V11 的动作并发送。
 
-        Args:
-            user_id (str): 消息接收者的用户ID。
-            group_id (Optional[str]): 如果是群聊，则为群组ID；私聊则为 None。
-            segments (List[Dict[str, Any]]): 要发送的消息段列表。
-            at_sender (bool): 在群聊中是否 @ 消息发送者。
-        """
-        params = {"message": segments} # 消息参数
-        action_name: Optional[str] = None # 动作名称
 
-        if group_id: # 如果是群聊消息
-            action_name = "send_group_msg"
-            params["group_id"] = group_id
-            if at_sender:
-                # 在消息段列表开头添加 @ 发送者的消息段
-                at_segment = {"type": "at", "data": {"qq": user_id}}
-                params["message"].insert(0, at_segment)
-        elif user_id: # 如果是私聊消息 (或私聊回复)
-            action_name = "send_private_msg"
-            params["user_id"] = user_id
-        
-        if not action_name:
-            logger.error(f"无法确定回复类型（私聊或群聊），user_id={user_id}, group_id={group_id}。")
+    # ======== 接收事件并交给 Dispatcher ========
+
+    async def _on_raw_message(self, raw_text: str):
+        """接收到 websocket 字符串后，解析 → 分发"""
+        try:
+            raw_event_dict = json.loads(raw_text)
+        except Exception:
+            logger.warning(f"[QQNapcat] 收到非 JSON 数据：{raw_text}")
             return
 
-        await self.send_action({"action": action_name, "params": params})
+        # Napcat 原始数据打印（用于调试）
+        print(json.dumps(raw_event_dict, ensure_ascii=False, indent=2))
+        
+        # 处理命令响应
+        if "echo" in raw_event_dict:
+            print("已收到echo")
+            self.command_api.set_response(raw_event_dict["echo"], raw_event_dict)
 
+        post_type = raw_event_dict.get("post_type")
+        if post_type == "meta_event":
+            # 处理元事件（如心跳、生命周期事件）
+            # 不进入 Event 队列
+            await self._handle_meta_event(raw_event_dict)
+            return
+        
+        # 进入event_queue的交给 dispatcher（核心）
+        await self.dispatcher.dispatch(raw_event_dict)
 
+    # ======== 给 API 层使用的发送接口 ========
 
+    async def _send_websocket(self, payload: Dict[str, Any]):
+        """Adapter 内部统一的 websocket 发送方法（消息或命令 API 均依赖此方法）"""
+        if not self._websocket:
+            raise ConnectionError("WebSocket 未连接，无法发送消息")
+        
+        # # 使用 .closed 属性来判断连接是否活跃
+        # if self._websocket.state != State.OPEN:
+        #     logger.warning(f"WebSocket 连接 {self.id} 已关闭，无法发送数据。")
+        #     return None
+        try:
+            await self._websocket.send(json.dumps(payload))
+        except Exception as e:
+            logger.error(f"[QQNapcat] WebSocket 发送失败：{e}", exc_info=True)
+
+    # ======== 处理元事件 ========
     async def _handle_meta_event(self, meta_event: Dict[str, Any]):
         """
         异步方法：处理来自 Napcat 的元事件（meta_event）。
@@ -220,20 +190,21 @@ class QQNapcatAdapter(PlatformAdapterBase):
             self_id = meta_event.get('self_id')
             logger.info(f"适配器 '{adapter_id}' 已成功连接到 QQ_Napcat 客户端 (self_id: {self_id})。")
             # 报告已连接事件
-            # self.commit_event(BaseEvent(
-            #     event_type="platform_connected",
-            #     source=adapter_id,
-            #     data={"adapter_id": adapter_id, "self_id": self_id}
-            # ))
-            
+            # self.commit_event
+
             self.last_heartbeat = time.time()
             # 如果心跳检查任务没有运行，则启动它
             if not self._heartbeat_checker_task or self._heartbeat_checker_task.done():
-                self._heartbeat_checker_task = asyncio.create_task(self._check_heartbeat_loop())
+                self._heartbeat_checker_task = asyncio.create_task(self._heartbeat_loop())
         
 
         elif meta_event_type == "heartbeat":
             status = meta_event.get("status", {})
+            
+            # 如果心跳检查任务没有运行，则启动它(不知道应不应该加，先加上)
+            if not self._heartbeat_checker_task or self._heartbeat_checker_task.done():
+                self._heartbeat_checker_task = asyncio.create_task(self._heartbeat_loop())
+
             if status.get("online") and status.get("good"):
                 self.last_heartbeat = time.time()
                 self.heartbeat_interval = meta_event.get("interval", 15000) / 1000.0
@@ -242,67 +213,29 @@ class QQNapcatAdapter(PlatformAdapterBase):
                 logger.warning(f"收到异常心跳: {meta_event}。将关闭连接以触发重连。")
                 if self._websocket:
                     await self._websocket.close()
+                    
 
-    async def _check_heartbeat_loop(self):
-        """
-        一个后台任务，主动检查心跳是否超时。
-        """
-        adapter_id = self.get_metadata()["id"]
-        logger.info(f"心跳主动检查任务已启动 for '{adapter_id}'.")
+    # ======== 心跳检查 ========
+
+    async def _heartbeat_loop(self):
+        logger.info("[QQNapcat] 心跳检查任务启动")
+
         while self._is_running and self._websocket:
-            # 睡眠时间放心跳间隔的1.5倍，提供一些缓冲
             await asyncio.sleep(self.heartbeat_interval * 1.5)
-            
-            if not self._is_running or not self._websocket:
-                break
 
             if time.time() - self.last_heartbeat > self.heartbeat_interval * 2:
-                logger.error(f"心跳超时！适配器 '{adapter_id}' 将关闭连接以触发重连。")
-                # 关闭连接，外层的重连循环会负责重启
-                await self._websocket.close()
-                break # 退出检查循环
-        logger.info(f"心跳主动检查任务已停止 for '{adapter_id}'.")
+                logger.error("[QQNapcat] 心跳超时，关闭连接以重新连接")
+                if self._websocket:
+                    await self._websocket.close()
+                break
 
-    async def terminate(self):
-        """
-        停止 WebSocket 服务器和所有相关任务。
-        """
-        if not self._is_running:
-            return
-            
-        adapter_id = self.get_metadata()["id"]
-        logger.info(f"正在停止 QQ_Napcat 适配器 '{adapter_id}'...")
-        self._is_running = False # 设置标志以停止重连循环
-        
-        if self._websocket and self._websocket.open:
-            await self._websocket.close()
-        
-        if self._heartbeat_checker_task and not self._heartbeat_checker_task.done():
-            self._heartbeat_checker_task.cancel()
+        logger.info("[QQNapcat] 心跳检测任务结束")
 
-        if self._server_task and not self._server_task.done():
-            self._server_task.cancel()
-            try:
-                await self._server_task
-            except asyncio.CancelledError:
-                pass # 意料之中的取消异常
-
-        logger.info(f"QQ Napcat 适配器 '{adapter_id}' 已成功停止。")
+    # ======== adapter metadata ========
 
     def get_metadata(self) -> Dict[str, Any]:
         return {
             "name": "qq_napcat",
-            "description": "使用Napcat的QQ 平台适配器，具备心跳检测和自动重连功能。",
-            "id": self.config.get("id", "default_qq_napcat")
+            "id": self.config.get("id", "default_qq_napcat"),
+            "description": "QQ Napcat WebSocket Adapter",
         }
-
-    async def send_action(self, action: Dict[str, Any]):
-        if self._websocket and self._websocket.open:
-            try:
-                await self._websocket.send(json.dumps(action))
-            except Exception as e:
-                logger.error(f"发送动作失败: {e}", exc_info=True)
-        else:
-            logger.error("无法发送动作：无活动的 WebSocket 连接。")
-
-    

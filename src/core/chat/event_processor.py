@@ -3,7 +3,7 @@ from typing import Optional, List, Callable, Awaitable, Dict, Any
 from dataclasses import dataclass, field
 
 from src.common.event_model.event import Event
-from src.core.chat import ChatManager
+from src.core.chat.chat_manager import ChatManager
 from src.core.replyer import Replyer
 from src.plugin_system.manager import PluginManager
 from src.plugin_system.plugin_planner import Planner

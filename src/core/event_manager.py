@@ -98,7 +98,7 @@ class EventManager:
 
     async def stop(self):
         """
-        优雅地停止事件管理器。
+        停止事件管理器。
         等待队列中的所有任务完成，然后停止消费者循环。
         """
         if not self._running:
