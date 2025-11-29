@@ -3,9 +3,6 @@ import time
 from typing import Optional
 
 from src.common.logger import get_logger
-from src.core.replyer import Replyer
-from src.plugin_system.manager import PluginManager
-from src.plugin_system.plugin_planner import Planner
 from src.core.event_manager import EventManager
 from src.platform.platform_manager import PlatformManager
 

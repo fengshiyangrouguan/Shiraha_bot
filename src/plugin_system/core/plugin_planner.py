@@ -2,7 +2,7 @@
 import json
 from typing import List, Dict, Any, Optional
 
-from src.plugin_system.manager import PluginManager
+from src.plugin_system.core.plugin_manager import PluginManager
 from src.utils.logger import logger
 from src.llm_api.request import LLMRequest
 from src.config import LLM_MODELS
@@ -87,7 +87,6 @@ class Planner:
                 logger.info(f"执行工具 '{tool_name}' 参数: {args}")
                 instance = tool_class()
                 plugin_output = await instance.execute(**args)
-
                 if "error" in plugin_output:
                     msg = f"你调用了 {tool_name} 工具，执行失败：{plugin_output['error']}"
                     logger.error(msg)

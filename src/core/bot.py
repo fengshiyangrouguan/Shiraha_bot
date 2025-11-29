@@ -4,8 +4,8 @@ import logging
 
 from src.core.chat import chat_manager
 from src.core.replyer import Replyer
-from src.plugin_system.manager import PluginManager
-from src.plugin_system.plugin_planner import Planner
+from src.plugin_system.core.plugin_manager import PluginManager
+from src.plugin_system.core.plugin_planner import Planner
 
 logger = logging.getLogger("main")
 
