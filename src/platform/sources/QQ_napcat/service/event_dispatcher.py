@@ -6,6 +6,7 @@ from src.platform.sources.QQ_napcat.utils import forward, image
 from src.common.event_model.info_data import UserInfo, ConversationInfo
 from src.common.event_model.event import Event
 from src.common.event_model.event_data import (
+    BaseEventData,
     Message, 
     MessageSegment
 )
@@ -74,11 +75,12 @@ class NapcatEventDispatcher:
             elif seg_type == "image":
                 # 判断是不是表情包
 
-                summary = seg["data"].get("summary", "")
-                if summary == "[动画表情]": 
+                sub_type = seg["data"].get("sub_type", "")
+                if sub_type == "1": 
                     seg_type = "sticker"
                 file_id = data["file"]
                 file_size = data["file_size"]
+                
                 #TODO: 应在获取消息前加一个判断是否尺寸过大，加一个尺寸解析阈值
                 
                 base_64 = await image.get_image_base64_async(data["url"])
@@ -86,6 +88,7 @@ class NapcatEventDispatcher:
                 data = base_64
 
             elif seg_type == "face":
+                #TODO: 在这里把表情id替换成表情文本,因为不同平台的表情id不同，在
                 raw_data = seg.get("data", {})
                 data = raw_data.get("id", {})
 
@@ -102,17 +105,23 @@ class NapcatEventDispatcher:
             raw_message=raw_event
         )
         
+        metadata: Dict = self.adapter.get_metadata()
         event = Event(
             event_type="message",
             event_id=str(object=raw_event.get("message_id", time.time())),
             time=raw_event.get("time", int(time.time())),
-            platform="qq",
+            platform=metadata[id],
             conversation_info=conversation_info,
             user_info=user_info,
             event_data=message
         )
 
         return event
+
+    def _handle_notice_event(self, raw_event: Dict[str, Any]):
+        pass
+
+
 
     def _parse_user_info(self,raw_event: Dict[str, Any]) -> UserInfo:
         sender:Dict = raw_event.get("sender", {})
@@ -149,6 +158,3 @@ class NapcatEventDispatcher:
                             )
         return conversation_info
         
-    def _handle_notice_event(self,raw_event: Dict[str, Any]):
-        pass
-

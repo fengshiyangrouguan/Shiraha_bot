@@ -8,7 +8,7 @@ from src.core.replyer import Replyer
 from src.plugin_system.manager import PluginManager
 from src.plugin_system.plugin_planner import Planner
 from src.plugin_system.event_types import EventType  # 导入新的事件类型
-from src.common.event_model.event_data import Message
+from src.common.event_model.event_data import BaseEventData
 
 logger = logging.getLogger("message_processor")
 
@@ -62,11 +62,10 @@ class EventProcessor:
 
         try:
             # 1. 消息段处理
-            if event.event_type == 'message':
-                message: Optional[Message] = event.event_data
-                await message.process_segments()  # 改动3：加 hasattr 检查，防止非消息事件报错
+            event_data: Optional[BaseEventData] = event.event_data
+            await event_data.process_to_context()
 
-            # 2. ON_MESSAGE_PRE_PROCESS 事件
+            # 2. ON_EVENT_PRE_PROCESS 事件(在此处引入插件系统劫持处理)
             if not await self._dispatch_event(EventType.ON_MESSAGE_PRE_PROCESS, event):
                 logger.info(f"ON_MESSAGE_PRE_PROCESS 事件拦截了事件 {getattr(event, 'event_id', 'UNKNOWN')}")
                 return None
@@ -76,7 +75,7 @@ class EventProcessor:
             content = getattr(event, "processed_plain_text", "")
             chat_stream.add_event(user_id=user_id, content=content)  # user_id 可能为 None
 
-            # 4. ON_MESSAGE 事件
+            # 4. ON_MESSAGE 事件(在此处引入插件系统劫持处理)
             if not await self._dispatch_event(EventType.ON_MESSAGE, event):
                 logger.info(f"ON_MESSAGE 事件拦截了事件 {getattr(event, 'event_id', 'UNKNOWN')}")
                 return None

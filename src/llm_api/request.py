@@ -1,107 +1,117 @@
-# llm_api/request.py
-import asyncio
+# src/llm_api/request.py
 import time
 from typing import List, Dict, Optional, Any, Tuple, Set
 
-from .client import BaseClient, APIResponse, get_client_for_model
+from src.system.di.container import container
+from src.common.config.schemas.llm_api_config import ModelConfig
+from src.common.config.schemas.llm_api_config import LLMApiConfig
+
+
+# 导入客户端注册表和我们新的标准异常
+from .model_client.base_client import client_registry
+from .exceptions import RespNotOkException, NetworkConnectionError, EmptyResponseException, ModelAttemptFailed
 
 class LLMRequest:
     """
-    LLM请求类，负责模型选择、客户端复用、故障切换和请求重试。
+    轻量化的LLM请求调度器。
+    负责根据任务配置进行模型选择、故障切换和状态管理。
     """
-    def __init__(self, model_configs: List[Dict[str, Any]]):
-        if not model_configs:
-            raise ValueError("模型配置列表不能为空")
-        self.model_configs = {conf["model_name"]: conf for conf in model_configs}
+    def __init__(self, task_name: str = "default"):
+        self.task_name = task_name
+        llm_config = container.resolve(LLMApiConfig)
 
-        # 模型使用状态，用于负载均衡和故障切换
-        # (失败次数, 上次使用时间)
-        self.model_states: Dict[str, Tuple[int, float]] = {
-            name: (0, 0.0) for name in self.model_configs.keys()
-        }
+        
+        try:
+            self.task_config = llm_config.model_task_config[task_name]
+        except KeyError:
+            print(f"警告：任务 '{task_name}' 配置未在 llm_api_config.toml 中找到，将使用 'default' 任务配置。")
+            self.task_config = llm_config.model_task_config["default"]
 
-        # 缓存客户端实例，避免每次都重新连接
-        self._clients: Dict[str, BaseClient] = {}
+        self.model_pool: Dict[str, ModelConfig] = {}
+        for model_name in self.task_config.model_list:
+            found = next((m for m in llm_config.models if m.name == model_name), None)
+            if found:
+                self.model_pool[model_name] = found
+            else:
+                print(f"警告：任务 '{task_name}' 配置的模型 '{model_name}' 在全局模型中未定义，已忽略。")
 
-    def _select_model(self, exclude_models: Set[str]) -> Optional[Dict[str, Any]]:
-        """
-        根据失败次数和最近使用情况选择一个模型。
-        - 优先选择失败次数最少的。
-        - 如果失败次数相同，选择最久未被使用的。
-        """
-        available_models = {
-            name: state
-            for name, state in self.model_states.items()
-            if name not in exclude_models
-        }
-        if not available_models:
-            return None
+        if not self.model_pool:
+            raise ValueError(f"任务 '{task_name}' 的模型池为空，请检查配置。")
 
-        sorted_models = sorted(
-            available_models.items(),
-            key=lambda item: (item[1][0], item[1][1])
-        )
+        self.model_states: Dict[str, Tuple[int, float]] = { name: (0, 0.0) for name in self.model_pool.keys() }
 
+    def _select_model(self, exclude_models: Set[str]) -> Optional[ModelConfig]:
+        available_models = { name: state for name, state in self.model_states.items() if name not in exclude_models }
+        if not available_models: return None
+        sorted_models = sorted(available_models.items(), key=lambda item: (item[1][0], item[1][1]))
         best_model_name = sorted_models[0][0]
+        return self.model_pool[best_model_name]
 
-        # 更新选中模型的“上次使用时间”
-        self.model_states[best_model_name] = (
-            self.model_states[best_model_name][0],
-            time.time()
-        )
-
-        return self.model_configs[best_model_name]
-
-    def _get_client(self, model_config: Dict[str, Any]) -> BaseClient:
+    async def execute(self, prompt: str, **kwargs) -> Tuple[str, str]:
         """
-        获取客户端实例，复用已有客户端。
-        """
-        model_name = model_config["model_name"]
-        if model_name not in self._clients:
-            client = get_client_for_model(model_config)
-            self._clients[model_name] = client
-        return self._clients[model_name]
-
-    async def generate_response_async(
-        self,
-        prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        异步生成响应，包含模型选择、客户端复用、重试和故障切换逻辑。
+        执行LLM请求，返回一个字符串结果。
         """
         failed_models: Set[str] = set()
-        max_attempts = len(self.model_configs)
-        messages = [{"role": "user", "content": prompt}]
+        last_exception: Optional[Exception] = None
+        max_attempts = len(self.model_pool)
 
-        for attempt in range(max_attempts):
-            selected_config = self._select_model(exclude_models=failed_models)
-            if not selected_config:
-                break
-
-            model_name = selected_config["model_name"]
-            llm_model_name = selected_config["llm_model_name"]
-
-            client = self._get_client(selected_config)
+        for _ in range(max_attempts):
+            model_config = self._select_model(exclude_models=failed_models)
+            if not model_config: break
 
             try:
-                # 调用客户端获取响应
-                response: APIResponse = await client.get_response(
-                    llm_model_name=llm_model_name,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
-                return response.content, model_name
+                llm_config = container.resolve(LLMApiConfig)
+                provider_config = next((p for p in llm_config.api_providers if p.name == model_config.api_provider), None)
+                if not provider_config:
+                    raise ValueError(f"模型 '{model_config.name}' 的 API Provider '{model_config.api_provider}' 未在配置中定义。")
+
+                client = client_registry.get_client(provider_config)
+                
+                request_params = {
+                    "temperature": self.task_config.temperature,
+                    "max_tokens": self.task_config.max_tokens,
+                    **kwargs
+                }
+
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 正在尝试使用模型: {model_config.name}...")
+                self.model_states[model_config.name] = (self.model_states[model_config.name][0], time.time())
+
+                # 注意：客户端内部的 tenacity 会处理临时的 NetworkError 和 RateLimitError
+                # 这里捕获的是重试耗尽后，或不可重试的“硬”错误
+                content = await client.get_response(model_config=model_config, prompt=prompt, **request_params)
+                
+                self.model_states[model_config.name] = (0, self.model_states[model_config.name][1])
+                print(f"模型 '{model_config.name}' 请求成功。")
+                return content, model_config.name
+
+            except RespNotOkException as e:
+                last_exception = e
+                # 根据状态码决定是否应该切换模型
+                if 400 <= e.status_code < 500 and e.status_code != 429:
+                    # 客户端错误(4xx, 非429)，通常是请求本身有问题，切换模型也无用，应直接终止
+                    print(f"模型 '{model_config.name}' 遇到客户端错误 (Code: {e.status_code})，终止所有尝试。错误: {e}")
+                    break 
+                else:
+                    # 服务器端错误(5xx)或速率限制(429)，可以尝试切换到下一个模型
+                    print(f"模型 '{model_config.name}' 遇到可切换的API错误 (Code: {e.status_code})，尝试下一个模型。")
+
+            except (NetworkConnectionError, EmptyResponseException) as e:
+                # 网络错误重试耗尽，或空响应，都适合切换到下一个模型
+                last_exception = e
+                print(f"模型 '{model_config.name}' 遇到问题，尝试下一个模型。错误: {e}")
 
             except Exception as e:
-                # 增加失败次数，记录失败模型
-                failure_count, last_used = self.model_states[model_name]
-                self.model_states[model_name] = (failure_count + 1, last_used)
-                failed_models.add(model_name)
-                print(f"模型 '{model_name}' 尝试失败: {e}")
+                last_exception = e
+                print(f"模型 '{model_config.name}' 遇到未知错误，尝试下一个模型。错误: {e}")
 
-        # 所有模型尝试失败
-        print("所有模型均尝试失败。")
-        return None, None
+            # 如果代码执行到这里，说明当前模型尝试失败
+            failure_count, last_used = self.model_states[model_config.name]
+            self.model_states[model_config.name] = (failure_count + 1, last_used)
+            failed_models.add(model_config.name)
+        
+        # 循环结束，所有模型尝试失败
+        error_message = f"任务 '{self.task_name}' 的所有可用模型均已尝试失败。"
+        print(error_message)
+        if last_exception:
+            raise ModelAttemptFailed(error_message, original_exception=last_exception) from last_exception
+        raise ModelAttemptFailed(error_message)

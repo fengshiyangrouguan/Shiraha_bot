@@ -5,6 +5,7 @@ import copy
 
 from src.plugin_system.event_types import EventType # 导入事件类型
 from src.common.event_model.info_data import ConversationInfo, UserInfo
+from src.common.event_model.event_data import BaseEventData
 
 @dataclass
 class Event:
@@ -28,7 +29,7 @@ class Event:
     tags: Set[str] = field(default_factory=set)
 
     # --- 事件主内容（MessageEvent / NoticeEvent / etc） ---
-    event_data: Optional[Any] = None
+    event_data: Optional[BaseEventData] = None
 
     # --- Metadata：插件、管道可写入的通用字段 ---
     metadata: Dict[str, Any] = field(default_factory=dict)

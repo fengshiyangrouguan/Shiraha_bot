@@ -14,7 +14,7 @@ logger = get_logger("main")
 
 class MainSystem:
     """
-    系统的“总指挥”，负责协调各个组件来处理消息。
+    Shiraha_bot系统，负责协调各个组件来处理消息。
     """
     def __init__(self,global_config=None):
         # 依赖注入配置
@@ -94,14 +94,3 @@ if __name__ == "__main__":
 
 
 
-#         logger.info(f"""
-# --------------------------------
-# 全部系统初始化完成，{self.global_config.bot.nickname}已成功唤醒
-# --------------------------------
-# 如果想要自定义{self.global_config.bot.nickname}的功能,请查阅：https://docs.mai-mai.org/manual/usage/
-# 或者遇到了问题，请访问我们的文档:https://docs.mai-mai.org/
-# --------------------------------
-# 如果你想要编写或了解插件相关内容，请访问开发文档https://docs.mai-mai.org/develop/
-# --------------------------------
-# 如果你需要查阅模型的消耗以及麦麦的统计数据，请访问根目录的maibot_statistics.html文件
-# """)

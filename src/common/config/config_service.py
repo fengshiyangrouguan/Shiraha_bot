@@ -1,122 +1,91 @@
+# src/common/config/config_service.py
 import toml
 from pathlib import Path
-from typing import Any, Dict, Union
-import logging
-from pydantic import ValidationError
+from typing import Type, TypeVar, Dict, Optional
 
-# 导入配置 Schema (假设这个路径在您的项目中是有效的)
-from backend.config_schema import AppConfig
+from pydantic import BaseModel, ValidationError
 
-logger = logging.getLogger("ConfigService")
-# 假设项目的根目录是当前文件的三级父目录
-current_file_path = Path(__file__).resolve()
+# 导入所有需要被管理的配置 Schema
+from .schemas.llm_api_config import LLMApiConfig
+from .schemas.bot_config import BotConfig
 
-# 根据您的约定路径定义配置文件的相对位置
-CONFIG_FILE_PATH = Path("configs/config.toml")
-ROOT_PATH = current_file_path.parent.parent.parent
+# 使用 TypeVar 来获得更精确的类型提示
+T = TypeVar('T', bound=BaseModel)
 
 class ConfigService:
     """
-    提供应用配置的读写和持久化服务，基于TOML文件和Pydantic Schema。
+    一个通用的、带缓存的配置加载服务。
+    通过一个集中的注册表来管理不同的配置文件，调用者使用逻辑名称获取配置。
+
+    可获取config：
+        llm_api，bot，
     """
-    
-    def __init__(self, config_path: Path = CONFIG_FILE_PATH):
-        self.config_path = config_path
+    _instance = None
+    _cache: Dict[str, BaseModel] = {}
 
-        # 存储 Pydantic 模型的实例
-        self._config: AppConfig 
-        self._load_config()
+    # 配置注册表: '逻辑名称' -> ('文件路径', Schema类)
+    _config_registry: Dict[str, tuple[str, Type[BaseModel]]] = {
+        "llm_api": ("configs/llm_api_config.toml", LLMApiConfig),
+        "bot": ("configs/bot_config.toml", BotConfig),
+        # 未来若有新配置，在此处添加即可
+        # "database": ("configs/database.toml", DatabaseConfig),
+    }
 
-    def _load_config(self):
-        """加载配置文件，通过Pydantic验证并设置默认值。"""
-        loaded_data: Dict[str, Any] = {}
-        
-        # 确保配置文件路径是绝对路径（如果 CONFIG_FILE_PATH 是相对路径）
-        # 假设 config.toml 文件位于与 service.py 同级的根目录或可以通过相对路径访问
-        
-        if self.config_path.exists():
-            try:
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ConfigService, cls).__new__(cls)
+        return cls._instance
 
-                with open(self.config_path, mode="r", encoding='utf-8') as f:
-                    loaded_data = toml.load(f)
-            except Exception as e:
-                logger.error(f"加载 TOML 配置文件失败: {e}。将使用默认配置或部分配置。")
-
-        try:
-            # Pydantic V2 推荐使用 model_validate 或 model_construct
-            # model_validate 会执行完整的验证和转换
-            self._config = AppConfig.model_validate(loaded_data)
-            logger.info("配置加载成功。")
-            
-        except ValidationError as e:
-            logger.error(f"配置 Schema 验证失败: {e}。将尝试使用有效部分并用默认值填充无效部分。")
-            
-            # 即使验证失败，我们仍尝试使用 Pydantic 实例化，让其用默认值填充
-            # Pydantic model_validate 已经尝试最大程度地恢复，但为了记录，可以再次尝试
-            try:
-                 self._config = AppConfig.model_validate(loaded_data)
-            except Exception:
-                 self._config = AppConfig() # 致命错误，退回完全默认
-            
-            self._save_config() # 建议保存一次，用默认值修复配置文件
-            
-        except Exception as e:
-           # 如果是其他严重错误，退回到完全默认配置
-           logger.error(f"配置加载发生未预期的错误: {e}。退回到完全默认配置。")
-           self._config = AppConfig()
-
-    def _save_config(self):
-        """持久化当前配置模型到文件。"""
-        # 确保配置文件的父目录存在
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            # Pydantic V2 推荐使用 model_dump 方法
-            data_to_save = self._config.model_dump(by_alias=True)
-            
-            with open(self.config_path, 'w', encoding='utf-8') as configfile:
-                # 使用 toml 库将字典保存为 TOML 文件
-                toml.dump(data_to_save, configfile)
-            logger.info("TOML 配置已保存到文件。")
-        except Exception as e:
-            logger.error(f"保存 TOML 配置失败: {e}")
-            
-    # 公共 API 变得更简洁和类型安全
-    
-    def get(self) -> AppConfig:
-        """返回整个配置模型实例。"""
-        return self._config
-
-    def set_and_save(self, section: str, option: str, value: Any):
+    def get_config(self, name: str) -> T:
         """
-        在内存中设置配置项，通过 Pydantic 验证后，立即持久化到文件。
-        为了确保类型安全和验证，最可靠的做法是创建一个新模型并验证。
+        根据逻辑名称加载、验证并缓存一个配置文件。
+
+        Args:
+            name (str): 在配置注册表中定义的逻辑名称 (e.g., "llm_api", "bot").
+
+        Returns:
+            一个经过验证的 Pydantic 模型实例。
+
+        Raises:
+            RuntimeError: 如果配置名称未注册、文件未找到或文件内容不符合 Schema。
         """
+        if name in self._cache:
+            # 直接从缓存返回
+            return self._cache[name]  # type: ignore
+
+        if name not in self._config_registry:
+            raise RuntimeError(f"未注册的配置名称: '{name}'。请在 ConfigService 的 _config_registry 中定义它。")
+
+        config_path_str, schema_class = self._config_registry[name]
+        config_path = Path(config_path_str)
+
+        if not config_path.exists():
+            raise RuntimeError(f"配置文件未找到: {config_path.resolve()}")
+
         try:
-            # 1. 将当前配置转换为字典
-            current_data = self._config.model_dump(by_alias=True)
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = toml.load(f)
             
-            # 2. 修改目标值
-            if section not in current_data:
-                raise AttributeError(f"配置段 '{section}' 不存在。")
+            # 使用 Pydantic 进行验证和解析
+            validated_config = schema_class.model_validate(data)
+            
+            # 存入缓存
+            self._cache[name] = validated_config
+            
+            return validated_config  # type: ignore
 
-            # 检查子模型是否存在（例如 device, diagnosis）
-            if not isinstance(current_data[section], dict):
-                # 如果配置段不是字典（例如它是一个顶级字段，但这不适用于您的 Schema）
-                raise AttributeError(f"配置段 '{section}' 结构不正确。")
-
-            current_data[section][option] = value
-            
-            # 3. 核心：使用修改后的数据重新创建模型，触发 Pydantic 验证
-            new_config = AppConfig.model_validate(current_data)
-            self._config = new_config # 验证成功，更新内存中的配置
-            
-            # 4. 持久化到文件
-            self._save_config()
-            logger.info(f"配置已更新并保存: [{section}] {option} = {value}")
-            
-        except AttributeError as e:
-            logger.error(f"{e}")
         except ValidationError as e:
-            logger.error(f"新值 '{value}' (用于 [{section}].{option}) 未通过 Pydantic 验证: {e.errors()}")
+            raise RuntimeError(f"配置文件 '{config_path_str}' (用于 '{name}') 格式错误:\n{e}")
         except Exception as e:
-            logger.error(f"配置设置失败: {e}")
+            raise RuntimeError(f"加载配置文件 '{config_path_str}' (用于 '{name}') 时发生未知错误: {e}")
+
+    def clear_cache(self, name: Optional[str] = None):
+        """
+        清空配置缓存。
+        如果不提供名称，则清空所有缓存；否则只清空指定名称的缓存。
+        """
+        if name:
+            if name in self._cache:
+                del self._cache[name]
+        else:
+            self._cache.clear()
