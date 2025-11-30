@@ -86,7 +86,7 @@ class PluginManager:
             return
 
         plugin_id = plugin_dir.name
-        if plugin.enable_plugin:
+        if plugin.plugin_info.enabled:
             self._plugins[plugin_id] = plugin
             logger.info(f"成功加载插件: {plugin.plugin_name}（ID={plugin_id}）")
         else:

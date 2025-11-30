@@ -32,7 +32,7 @@ class PluginConfigManager:
             field = self.config_schema["plugin"].get("version")
             if isinstance(field, ConfigField):
                 return field.default
-        return "1.0.0"
+        return "0.0.0"
 
     @staticmethod
     def get_current_config_version(config: Dict[str, Any]) -> str:
@@ -190,10 +190,6 @@ class PluginConfigManager:
         - config_data is None => 生成默认配置（冷启动）
         - config_data is dict  => 写入迁移后的配置（带版本号）
         """
-        if not self.config_schema:
-            logger.debug(f"{self.log_prefix} 插件未定义 config_schema，不生成配置文件")
-            return
-
         if config_data is None:
             toml_str = self.build_config_toml(config_data=None, include_version=False)
             msg = "已生成默认配置文件"
@@ -238,12 +234,6 @@ class PluginConfigManager:
             existing_config = toml.load(f) or {}
 
         current_version = self.get_current_config_version(existing_config)  # config.toml中版本
-
-        # 没有版本信息，不做迁移
-        if current_version == "0.0.0":
-            logger.debug(f"{self.log_prefix} 配置文件无版本信息，跳过版本检查")
-            return existing_config
-
         expected_version = self.get_expected_config_version()  # config_schema中版本
 
         # 当前版本不等于期望版本，即config.toml中版本不等于config_schema中版本，
@@ -259,10 +249,3 @@ class PluginConfigManager:
 
         logger.debug(f"{self.log_prefix} 配置版本匹配 (v{current_version})，直接加载")
         return existing_config
-
-    # 一个小工具：从 config 中取 enabled
-    @staticmethod
-    def get_enabled_from_config(config: Dict[str, Any], default_enabled: bool) -> bool:
-        if "plugin" in config and "enabled" in config["plugin"]:
-            return bool(config["plugin"]["enabled"])
-        return default_enabled
