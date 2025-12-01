@@ -53,7 +53,14 @@ class PluginManager:
 
             self._load_single_plugin(folder, plugin_file)
 
+        for plugin in list(self._plugins.values()):
+            if not self._check_dependencies(plugin):
+                logger.info(f"{plugin.log_prefix} 插件缺少依赖，已禁用。")
+                self._plugins.pop(plugin.plugin_name)
         logger.info(f"插件加载完成，共加载 {len(self._plugins)} 个插件。")
+        # 注册剩余插件的组件
+        for plugin in self._plugins.values():
+            self._register_components(plugin)
 
     # =====加载单个plugin.py文件=====
     def _load_single_plugin(self, folder: Path, plugin_file: Path):
@@ -85,14 +92,11 @@ class PluginManager:
             logger.error(f"实例化插件 '{plugin_class.__name__}' 失败: {e}")
             return
 
-        plugin_id = plugin_dir.name
         if plugin.plugin_info.enabled:
-            self._plugins[plugin_id] = plugin
-            logger.info(f"成功加载插件: {plugin.plugin_name}（ID={plugin_id}）")
+            self._plugins[plugin.plugin_name] = plugin
+            logger.info(f"成功加载插件: {plugin.plugin_name}")
         else:
             logger.info(f"{plugin.log_prefix} 插件已禁用，不注册组件。")
-        # 注册该插件的所有组件
-        self._register_components(plugin)
 
     # =====注册插件的全部组件=====
     def _register_components(self, plugin: BasePlugin):
@@ -110,8 +114,6 @@ class PluginManager:
                 self._tools[comp_info.name] = comp_class
                 logger.info(f"  注册 Tool: {comp_info.name}")
 
-
-
             else:
                 logger.warning(f"未知组件类型: {ctype}")
 
@@ -121,3 +123,18 @@ class PluginManager:
 
     def get_all_tool_definitions(self) -> List[Dict[str, Any]]:
         return [tool.get_definition() for tool in self._tools.values()]
+
+    def _check_dependencies(self, plugin: BasePlugin) -> bool:
+        """检查插件依赖"""
+        if not plugin.dependencies:
+            return True
+
+        for dep in plugin.dependencies:
+            if not self.get_plugin(dep):
+                logger.error(f"{plugin.log_prefix} 缺少依赖插件: {dep}")
+                return False
+        return True
+
+    def get_plugin(self, plugin_name: str) -> BasePlugin | None:
+        """获取单个插件实例"""
+        return self._plugins.get(plugin_name)

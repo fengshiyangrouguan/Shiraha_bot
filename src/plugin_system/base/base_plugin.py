@@ -86,7 +86,7 @@ class BasePlugin(ABC):
 
         # 5. 从 manifest 获取显示信息
         self.display_name = self.get_manifest_info("name", self.plugin_name)
-        self.plugin_version = self.get_manifest_info("version", "1.0.0")
+        self.plugin_version = self.get_manifest_info("version", "0.0.0")
         self.plugin_description = self.get_manifest_info("description", "")
         self.plugin_author = self._get_author_name()
 
@@ -94,17 +94,16 @@ class BasePlugin(ABC):
         self.plugin_info = PluginInfo(
             # 插件基本信息
             name=self.plugin_name,
-            display_name=self.display_name,
             dependencies=self.dependencies.copy(),
             python_dependencies=self.python_dependencies.copy(),
-            # config 相关信息
-            version=self.plugin_version,
-            enabled=self.config.get("plugin", {}).get("enabled", self.enable_plugin),  # 如果config无enabled属性，则使用基本信息中定义的
             config_file=self.config_file_name or "",
+            enabled=self.config.get("plugin", {}).get("enabled", self.enable_plugin),  # 如果config无enabled属性，则使用基本信息中定义的
             # manifest 相关信息
             manifest_data=self.manifest_data.copy(),
-            author=self.plugin_author,
+            display_name=self.display_name,
+            version=self.plugin_version,
             description=self.plugin_description,
+            author=self.plugin_author,
             license=self.get_manifest_info("license", ""),
             homepage_url=self.get_manifest_info("homepage_url", ""),
             repository_url=self.get_manifest_info("repository_url", ""),
@@ -227,20 +226,7 @@ class BasePlugin(ABC):
 
         return value
 
-    # ======== 依赖检查 & 配置访问 ========
-    def _check_dependencies(self) -> bool:
-        """检查插件依赖（TODO: 接入 component_registry 做真正的依赖检查）"""
-        # from src.plugin_system.core.component_registry import component_registry
-        #
-        # if not self.dependencies:
-        #     return True
-        #
-        # for dep in self.dependencies:
-        #     if not component_registry.get_plugin_info(dep):
-        #         logger.error(f"{self.log_prefix} 缺少依赖插件: {dep}")
-        #         return False
-        return True
-
+    # ======== 配置访问 ========
     def get_config(self, key: str, default: Any = None) -> Any:
         """获取插件配置值，支持 'section.key' 形式嵌套访问"""
         keys = key.split(".")

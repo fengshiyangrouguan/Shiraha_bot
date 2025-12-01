@@ -59,7 +59,7 @@ class WeatherPlugin(BasePlugin):
     """
     plugin_name: str = "weather_plugin"  # 内部标识符
     enable_plugin: bool = True
-    dependencies: List[str] = []  # 插件依赖列表
+    dependencies: List[str] = ['123']  # 插件依赖列表
     python_dependencies: List[str] = []  # Python包依赖列表
     config_file_name: str = "config.toml"  # 配置文件名
 
