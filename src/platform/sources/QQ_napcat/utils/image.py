@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import logging
 import io
 from PIL import Image
@@ -89,3 +90,16 @@ def convert_image_to_gif(image_base64: str) -> str:
     except Exception as e:
         logger.error(f"图片转换为GIF失败: {str(e)}")
         return image_base64
+    
+
+
+def image_base64_to_uuid(base64_str: str) -> str:
+    """
+    根据图片 base64 内容生成稳定的唯一 ID（内容相同 → ID 相同）
+    """
+    # 计算 SHA256
+    digest = hashlib.sha256(base64_str.encode("utf-8")).hexdigest()
+
+    # 截断成 UUID-like 格式（如果你喜欢）
+    uuid_like = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
+    return uuid_like

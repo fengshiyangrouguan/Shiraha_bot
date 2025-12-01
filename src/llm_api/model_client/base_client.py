@@ -21,6 +21,14 @@ class BaseClient(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    async def get_response_with_image(self, model_config: ModelConfig, messages: list, **kwargs) -> str:
+        """
+        发送包含图像的请求并获取LLM的回复。
+        返回一个字符串结果。
+        """
+        raise NotImplementedError
+
 class ClientRegistry:
     """客户端注册表，用于管理不同类型的客户端。"""
     _instance = None

@@ -17,6 +17,7 @@ from src.system.di.container import container
 from src.common.config.config_service import ConfigService
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.config.schemas.llm_api_config import LLMApiConfig
+from src.llm_api.factory import LLMRequestFactory
 
 async def main():
     """
@@ -41,6 +42,8 @@ async def main():
         await db_manager.initialize_database(echo=False) # echo=True 可查看 SQL
         
         platform_manager = PlatformManager()
+        llm_request_factory = LLMRequestFactory()
+
         
         # 创建 WorldModel
         
@@ -48,6 +51,7 @@ async def main():
         container.register_instance(LLMApiConfig, instance=llm_api_config)
         container.register_instance(DatabaseManager, instance=db_manager)
         container.register_instance(PlatformManager, instance=platform_manager)
+        container.register_instance(LLMRequestFactory, instance=llm_request_factory)
         world_model = WorldModel()
         container.register_instance(WorldModel, instance=world_model)
         

@@ -32,10 +32,7 @@ def extract_forward_info_from_raw(raw_event: Dict[str, Any]) -> Optional[Dict[st
                 forward_id = raw.get("msgId")
                 if not forward_id:
                     forward_id = ""
-                return {
-                    "forward_id": str(forward_id),
-                    "forward_preview": xml_content,
-                }
+                return xml_content
 
     except Exception as e:
         pass

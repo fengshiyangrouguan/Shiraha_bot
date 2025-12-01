@@ -2,6 +2,10 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, List, Optional, Dict, Literal
 from abc import ABC, abstractmethod
 
+from src.llm_api.factory import LLMRequestFactory
+from src.system.di.container import container
+
+
 @dataclass
 class BaseEventData(ABC):
     """
@@ -10,6 +14,7 @@ class BaseEventData(ABC):
     """
     
     LLM_plain_text: Optional[str] = field(default=None, init=False)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     """解析完拼接的纯文本，用于短期记忆生成"""
     
     @abstractmethod
@@ -44,8 +49,6 @@ class Message(BaseEventData):
     message_id: Optional[str] = None
     # 消息内容片段列表（text/image/mention 等）
     segments: List[MessageSegment] = field(default_factory=list)
-    # 平台消息原始信息
-    raw_message: Optional[Dict[str, Any]] = None
 
 
     def add_segment(self, segment: MessageSegment):
@@ -60,6 +63,7 @@ class Message(BaseEventData):
         文本段直接拼接，@ 提及、emoji、语音、图片 等类型转为文本，再拼接进来。
         """
         texts = []
+        llm_factory = container.resolve(LLMRequestFactory)
 
         for seg in self.segments:
             if seg.type == "text":
@@ -67,10 +71,52 @@ class Message(BaseEventData):
             elif seg.type == "face":
                 # emoji 直接当作文本拼接
                 texts.append(str(seg.data))
-            elif seg.type == "mention":
-                # 假设 data 包含 username
-                username = seg.data.get("username", "")
-                texts.append(f"@{username}")
+
+            elif seg.type == "forward":
+                # TODO: 这里未来可以先从adapter 加一个转发消息递归解析，然后调用LLM生成描述
+                texts.append(f"[转发消息概述:{seg.data}]")
+
+            elif seg.type == "reply":
+                texts.append(f"[回复{seg.data}的消息{self.metadata.get("reply_text", "")}]:")
+
+            elif seg.type == "at":
+                #适配器传回的就是 @ xxx 的文本
+                texts.append(f"{seg.data}: ")
+
+            elif seg.type == "image":
+                try:
+                    # 获取VLM请求实例
+                    vlm_request = llm_factory.get_request("vlm")
+                    # 定义一个标准的、非对话式的提示词
+                    prompt = "请仅简单描述图片的视觉内容，不要添加任何额外的问候、感想或建议。"
+                    # 调用API获取图片描述
+                    description, model_name = await vlm_request.execute_with_image(
+                        prompt=prompt,
+                        base64_image_data=seg.data
+                    )
+                    texts.append(f"[图片描述: {description}]")
+                except Exception as e:
+                    # 如果生成描述失败，使用旧的占位符
+                    texts.append(f"[{seg.type}]")
+                    # 可以考虑记录错误日志
+                    print(f"为图片生成描述失败: {e}")
+            elif seg.type == "sticker":
+                try:
+                    # 获取VLM请求实例
+                    vlm_request = llm_factory.get_request("vlm")
+                    # 定义一个标准的、非对话式的提示词
+                    prompt = "请仅简单描述这个表情包的视觉内容，不要添加任何额外的问候、感想或建议。"
+                    # 调用API获取图片描述
+                    description, model_name = await vlm_request.execute_with_image(
+                        prompt=prompt,
+                        base64_image_data=seg.data
+                    )
+                    texts.append(f"发了一个表情包：[表情包描述: {description}]")
+                except Exception as e:
+                    # 如果生成描述失败，使用旧的占位符
+                    texts.append(f"[{seg.type}]")
+                    # 可以考虑记录错误日志
+                    print(f"为表情包生成描述失败: {e}")
             else:
                 # 其它类型，用占位表示
                 texts.append(f"[{seg.type}]")

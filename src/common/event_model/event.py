@@ -30,9 +30,6 @@ class Event:
     # --- 事件主内容（MessageEvent / NoticeEvent / etc） ---
     event_data: Optional[BaseEventData] = None
 
-    # --- Metadata：插件、管道可写入的通用字段 ---
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
      # --- 事件内部处理控制 ---
     _propagation_stopped: bool = False   # 插件设置该标志位，阻断传播，默认不阻断
 

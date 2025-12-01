@@ -2,7 +2,8 @@ import logging
 import time
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from src.platform.sources.qq_napcat.utils import forward, image
+from src.platform.sources.qq_napcat.utils import forward, image, reply_at
+from src.platform.sources.qq_napcat.utils.qq_face_list import qq_face
 from src.common.event_model.info_data import UserInfo, ConversationInfo
 from src.common.event_model.event import Event
 from src.common.event_model.event_data import (
@@ -64,6 +65,7 @@ class NapcatEventDispatcher:
         user_info:UserInfo = self._parse_user_info(raw_event)
         conversation_info:ConversationInfo = self._parse_conversation_info(raw_event)
         segments: List[MessageSegment] = []
+        metadata: Dict[str, Any] = {}
         for seg in raw_event.get("message", []):
 
             seg_type = seg.get("type")
@@ -76,23 +78,40 @@ class NapcatEventDispatcher:
                 # 判断是不是表情包
 
                 sub_type = seg["data"].get("sub_type", "")
-                if sub_type == "1": 
+                if sub_type == 1: 
                     seg_type = "sticker"
                 file_id = data["file"]
                 file_size = data["file_size"]
-                
                 #TODO: 应在获取消息前加一个判断是否尺寸过大，加一个尺寸解析阈值
                 
                 base_64 = await image.get_image_base64_async(data["url"])
+                image_id = image.image_base64_to_uuid(base_64)
+                metadata["image_id"] = image_id
                 # data = {"file_id":file_id,"file_size":file_size,"base64":base_64}
                 data = base_64
 
             elif seg_type == "face":
-                raw_data = seg.get("data", {})
-                data = raw_data.get("id", {})
+                face_id = data.get("id", {})
+                data = qq_face.get(str(face_id), f"[未知表情:{face_id}]")
 
             elif seg_type == "forward":
+                metadata["forward_id"] = data.get("id")
                 data = forward.extract_forward_info_from_raw(raw_event)
+
+            elif seg_type == "reply":
+                #TODO: reply和at均有问题，需要改为调用api从id获取内容
+                reply_name = reply_at.get_reply_name(raw_event)
+                reply_text = reply_at.get_reply_text(raw_event)
+                metadata["reply_id"] = data["id"]
+                metadata["reply_text"] = reply_text
+                data = reply_name
+
+            elif seg_type == "at":
+                at_name = reply_at.get_at_nickname(raw_event)
+                metadata["at_id"] = data["qq"]
+                data = at_name
+            
+            #TODO:判断自己有没有被at
 
             #TODO 当前无特殊解析逻辑的直接插入 例如reply，at，json，以后再做处理
             segments.append(MessageSegment(type=seg_type, data=data))
@@ -101,7 +120,7 @@ class NapcatEventDispatcher:
         message = Message(
             message_id=str(raw_event.get("message_id")),
             segments=segments,
-            raw_message=raw_event
+            metadata=metadata
         )
         # 构建 Event
         event = Event(

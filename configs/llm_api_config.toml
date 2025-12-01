@@ -144,4 +144,8 @@ model_list = ["siliconflow-deepseek-v3.2","siliconflow-deepseek-v3.2-think","sil
 temperature = 0.3                        # 模型温度，新V3建议0.1-0.3
 max_tokens = 2048
 
+[model_task_config.vlm] # 图像识别模型
+model_list = ["qwen3-vl-30"]
+max_tokens = 256
+
 

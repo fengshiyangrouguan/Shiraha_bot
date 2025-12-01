@@ -96,9 +96,7 @@ desktop.ini
 # =========================
 data/invest_data
 src/plugins/utils/policy_final.pt
-database_maibot/
-chat_maibot/
-mood_maibot/
+maibot/
+note/no_use
 data/
 logs/
-note/

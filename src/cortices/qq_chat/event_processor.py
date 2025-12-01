@@ -117,11 +117,7 @@ class QQChatEventProcessor:
 
             logger.debug(f"ConversationInfoDB (ID: {conversation_db.conversation_id}) 已保存。")
         
-        # 将 event.event_data 转换为 JSON 字符串进行存储
         event_content = event.event_data.LLM_plain_text
-
-
-        # 将 event.tags 转换为 List[str]
         event_tags_list = list(event.tags) if event.tags else []
 
         event_db = EventDB(
@@ -137,7 +133,7 @@ class QQChatEventProcessor:
             user_cardname=event.user_info.user_cardname if event.user_info else None,
             tags=event_tags_list,
             event_content=event_content, # 存储为 JSON 字符串
-            event_metadata=event.metadata
+            event_metadata=event.event_data.metadata
         )
         await self.database_manager.upsert(event_db)
         print(json.dumps(event_db.model_dump(), ensure_ascii=False, indent=4))
