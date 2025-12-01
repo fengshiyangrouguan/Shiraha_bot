@@ -40,6 +40,13 @@ timeout = 120
 retry_interval = 5
 
 
+[[models]] # 模型（可以配置多个）
+model_identifier = "deepseek-chat" # 模型标识符（API服务商提供的模型标识符）
+name = "deepseek-v3"               # 模型名称（可随意命名，在后面中需使用这个命名）
+api_provider = "DeepSeek"          # API服务商名称（对应在api_providers中配置的服务商名称）
+price_in = 2.0                     # 输入价格（用于API调用统计，单位：元/ M token）（可选，若无该字段，默认值为0）
+price_out = 8.0                    # 输出价格（用于API调用统计，单位：元/ M token）（可选，若无该字段，默认值为0）
+#force_stream_mode = true          # 强制流式输出模式（若模型不支持非流式输出，请取消该注释，启用强制流式输出，若无该字段，默认值为false）
 
 [[models]]
 model_identifier = "deepseek-ai/DeepSeek-V3.2-Exp"
@@ -124,12 +131,14 @@ price_out = 0
 
 
 
+
+
 [model_task_config.motive] # 动机：生成最高动机的模型
 model_list = ["siliconflow-deepseek-v3.2"]
 temperature = 0.3
 max_tokens = 800
 
-[model_task_config.main_planner] # 主规划器：主规划器模块使用该配置
+[model_task_config.planner] # 规划器：所有规划器模块均使用该配置
 model_list = ["siliconflow-deepseek-v3.2"]
 temperature = 0.3
 max_tokens = 1024
@@ -145,3 +154,58 @@ temperature = 0.3                        # 模型温度，新V3建议0.1-0.3
 max_tokens = 2048
 
 
+
+
+
+
+
+[model_task_config.utils] # 组件中使用的模型
+model_list = ["siliconflow-deepseek-v3.2"] # 使用的模型列表，每个子项对应上面的模型名称(name)
+temperature = 0.2                        # 模型温度，新V3建议0.1-0.3
+max_tokens = 2048                         # 最大输出token数
+
+
+[model_task_config.utils_small] # 在麦麦的一些组件中使用的小模型，消耗量较大，建议使用速度较快的小模型
+model_list = ["qwen3-30b","qwen3-next-80b"]
+temperature = 0.7
+max_tokens = 2048
+
+[model_task_config.tool_use] #工具调用模型，需要使用支持工具调用的模型
+model_list = ["qwen3-30b","qwen3-next-80b"]
+temperature = 0.7
+max_tokens = 800
+
+[model_task_config.replyer] # 首要回复模型，还用于表达器和表达方式学习
+model_list = ["siliconflow-deepseek-v3.2","siliconflow-deepseek-v3.2-think","siliconflow-glm-4.6","siliconflow-glm-4.6-think"]
+temperature = 0.3                        # 模型温度，新V3建议0.1-0.3
+max_tokens = 2048
+
+
+
+[model_task_config.vlm] # 图像识别模型
+model_list = ["qwen3-vl-30"]
+max_tokens = 256
+
+[model_task_config.voice] # 语音识别模型
+model_list = ["sensevoice-small"]
+
+#嵌入模型
+[model_task_config.embedding]
+model_list = ["bge-m3"]
+
+#------------LPMM知识库模型------------
+
+[model_task_config.lpmm_entity_extract] # 实体提取模型
+model_list = ["siliconflow-deepseek-v3.2"]
+temperature = 0.2
+max_tokens = 800
+
+[model_task_config.lpmm_rdf_build] # RDF构建模型
+model_list = ["siliconflow-deepseek-v3.2"]
+temperature = 0.2
+max_tokens = 800
+
+[model_task_config.lpmm_qa] # 问答模型
+model_list = ["siliconflow-deepseek-v3.2"]
+temperature = 0.7
+max_tokens = 800

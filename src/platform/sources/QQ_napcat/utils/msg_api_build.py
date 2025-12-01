@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from src.platform.sources.QQ_napcat.utils import image
+from src.platform.sources.qq_napcat.utils import image
 
 def build_text_seg(text: str) -> Dict[str, Any]:
     """

@@ -1,24 +1,26 @@
 import asyncio
 import json
 import time
-import logging
+
 import websockets as Server
 from websockets.protocol import State # <-- 导入 State
 
 from typing import Any, Dict, Optional
 
-from src.platform.platform_base import PlatformAdapterBase, PostMethod
-from src.platform.sources.QQ_napcat.service.event_dispatcher import NapcatEventDispatcher
-from src.platform.sources.QQ_napcat.service.message_service import NapcatMessageService
-from src.platform.sources.QQ_napcat.service.command_service import NapcatCommandService
+from src.common.logger import get_logger
+from src.platform.platform_base import BasePlatformAdapter, PostMethod
+from src.platform.sources.qq_napcat.service.event_dispatcher import NapcatEventDispatcher
+from src.platform.sources.qq_napcat.service.message_service import NapcatMessageService
+from src.platform.sources.qq_napcat.service.command_service import NapcatCommandService
+from src.platform.sources.qq_napcat.config_schema import ConfigSchema
 
-logger = logging.getLogger(__name__)
+logger = get_logger("QQ Adapter")
 
 
 RECONNECT_DELAY = 30  # seconds
 
 
-class QQNapcatAdapter(PlatformAdapterBase):
+class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
     """
     新结构的 QQ Napcat Adapter：
     - 连接管理
@@ -27,11 +29,13 @@ class QQNapcatAdapter(PlatformAdapterBase):
     - MessageAPI & CommandAPI 提供消息与命令能力
     """
 
-    def __init__(self, post_method: PostMethod, platform_config: Dict[str, Any]):
-        super().__init__(post_method, platform_config)
+    def __init__(self, adapter_id: str, platform_type: str, config: ConfigSchema, post_method: PostMethod): # 更新 __init__ 签名
+        super().__init__(adapter_id, platform_type, config, post_method) # 调用父类构造函数
 
-        self.host = self.config.get("host", "127.0.0.1")
-        self.port = self.config.get("port", 8080)
+        # 直接从 config 对象获取 host 和 port
+        self.config: ConfigSchema
+        self.host = self.config.host
+        self.port = self.config.port
 
         # WebSocket 状态
         self._server_task: Optional[asyncio.Task] = None
@@ -50,13 +54,13 @@ class QQNapcatAdapter(PlatformAdapterBase):
     # ======== 生命周期管理 ========
 
     def run(self) -> asyncio.Task:
-        logger.info(f"[QQNapcat] 准备启动 websocket 服务 ws://{self.host}:{self.port}")
+        logger.info(f"适配器[{self.adapter_id}] 准备启动 websocket 服务 ws://{self.host}:{self.port}")
         self._is_running = True
         self._server_task = asyncio.create_task(self._run_server())
         return self._server_task
 
     async def terminate(self):
-        logger.info("[QQNapcat] 停止 Napcat adapter...")
+        logger.info(f"适配器[{self.adapter_id}] 停止中...")
         self._is_running = False
 
         if self._websocket and self._websocket.open:
@@ -72,7 +76,7 @@ class QQNapcatAdapter(PlatformAdapterBase):
             except asyncio.CancelledError:
                 pass
 
-        logger.info("[QQNapcat] 适配器已停止")
+        logger.info(f"适配器[{self.adapter_id}] 已停止")
 
     # ======== WebSocket server logic ========
 
@@ -82,16 +86,15 @@ class QQNapcatAdapter(PlatformAdapterBase):
                 async with Server.serve(
                     self._connection_handler, self.host, self.port, max_size=2**26
                 ) as server:
-                    logger.info("[QQNapcat] 服务器启动成功，等待客户端连接...")
+                    logger.info(f"适配器[{self.adapter_id}] 服务器启动成功，等待客户端连接...")
                     await server.wait_closed()
 
             except Exception as e:
-                logger.error(f"[QQNapcat] 服务器异常：{e}", exc_info=True)
-
+                logger.error(f"适配器[{self.adapter_id}] 服务器异常：{e}", exc_info=True)
             if not self._is_running:
                 break
 
-            logger.warning(f"[QQNapcat] 连接断开，将在 {RECONNECT_DELAY}s 后重试")
+            logger.warning(f"适配器[{self.adapter_id}] 连接断开，将在 {RECONNECT_DELAY}s 后重试")
             await asyncio.sleep(RECONNECT_DELAY)
 
 
@@ -99,8 +102,7 @@ class QQNapcatAdapter(PlatformAdapterBase):
         """处理 websocket 连接生命周期"""
 
         self._websocket = websocket
-        adapter_id = self.get_metadata()["id"]
-        logger.info(f"QQ_Napcat 客户端已连接到适配器 '{adapter_id}' ({websocket.remote_address})。")
+        logger.info(f"适配器[{self.adapter_id}] 客户端已连接至 ({websocket.remote_address})。")
         final_code = 1000 # 默认正常关闭
         final_reason = "Normal Closure"
 
@@ -112,25 +114,25 @@ class QQNapcatAdapter(PlatformAdapterBase):
             # Ctrl+C 或 terminate() 触发
             final_code = 4000
             final_reason = "Connection cancelled by adapter shutdown"
-            logger.info(f"客户端 {adapter_id} 连接处理任务被取消。")
+            logger.info(f"客户端 {self.adapter_id} 连接处理任务被取消。")
         
         except Server.exceptions.ConnectionClosed as e:
             # 客户端或网络主动断开
             final_code = e.code
             final_reason = e.reason or "Client Disconnected"
-            logger.warning(f"QQ_Napcat 客户端连接已关闭: {websocket.remote_address} (Code: {final_code}, Reason: {final_reason})")
+            logger.warning(f"客户端连接已关闭: {websocket.remote_address} (Code: {final_code}, Reason: {final_reason})")
         
         except Exception as e:
             # 捕获其他意外错误
             final_code = 1011 # 内部错误
             final_reason = f"Unexpected Internal Error: {type(e).__name__}"
-            logger.error(f"处理客户端 {adapter_id} 时出现意外错误: {e}", exc_info=True)
+            logger.error(f"处理客户端 {self.adapter_id} 时出现意外错误: {e}", exc_info=True)
         finally:
             self._websocket = None # 清除当前 WebSocket 连接引用
             # 取消心跳检查任务
             if self._heartbeat_checker_task and not self._heartbeat_checker_task.done():
                 self._heartbeat_checker_task.cancel()        
-            # 报告连接已关闭事件 (现在使用已赋值的 final_code/reason)
+            #TODO: 报告连接已关闭事件 (现在使用已赋值的 final_code/reason)
 
 
     # ======== 接收事件并交给 Dispatcher ========
@@ -140,7 +142,7 @@ class QQNapcatAdapter(PlatformAdapterBase):
         try:
             raw_event_dict = json.loads(raw_text)
         except Exception:
-            logger.warning(f"[QQNapcat] 收到非 JSON 数据：{raw_text}")
+            logger.warning(f"适配器[{self.adapter_id}] 收到非 JSON 数据：{raw_text}")
             return
 
         # Napcat 原始数据打印（用于调试）
@@ -168,14 +170,10 @@ class QQNapcatAdapter(PlatformAdapterBase):
         if not self._websocket:
             raise ConnectionError("WebSocket 未连接，无法发送消息")
         
-        # # 使用 .closed 属性来判断连接是否活跃
-        # if self._websocket.state != State.OPEN:
-        #     logger.warning(f"WebSocket 连接 {self.id} 已关闭，无法发送数据。")
-        #     return None
         try:
             await self._websocket.send(json.dumps(payload))
         except Exception as e:
-            logger.error(f"[QQNapcat] WebSocket 发送失败：{e}", exc_info=True)
+            logger.error(f"适配器[{self.adapter_id}] WebSocket 发送失败：{e}", exc_info=True)
 
     # ======== 处理元事件 ========
     async def _handle_meta_event(self, meta_event: Dict[str, Any]):
@@ -184,13 +182,11 @@ class QQNapcatAdapter(PlatformAdapterBase):
         处理连接生命周期事件和心跳事件。
         """
         meta_event_type = meta_event.get("meta_event_type")
-        adapter_id = self.get_metadata()["id"]
 
         if meta_event_type == "lifecycle" and meta_event.get("sub_type") == "connect":
             self_id = meta_event.get('self_id')
-            logger.info(f"适配器 '{adapter_id}' 已成功连接到 QQ_Napcat 客户端 (self_id: {self_id})。")
-            # 报告已连接事件
-            # self.commit_event
+            logger.info(f"适配器 '{self.adapter_id}' 已成功连接到 qq_napcat 客户端 (self_id: {self_id})。")
+            #TODO:报告已连接事件 self.commit_event 
 
             self.last_heartbeat = time.time()
             # 如果心跳检查任务没有运行，则启动它
@@ -208,9 +204,9 @@ class QQNapcatAdapter(PlatformAdapterBase):
             if status.get("online") and status.get("good"):
                 self.last_heartbeat = time.time()
                 self.heartbeat_interval = meta_event.get("interval", 15000) / 1000.0
-                logger.debug("收到正常心跳。")
+                logger.debug(f"[QQNapcat:{self.adapter_id}] 收到正常心跳。")
             else:
-                logger.warning(f"收到异常心跳: {meta_event}。将关闭连接以触发重连。")
+                logger.warning(f"[QQNapcat:{self.adapter_id}] 收到异常心跳: {meta_event}。将关闭连接以触发重连。")
                 if self._websocket:
                     await self._websocket.close()
                     
@@ -218,24 +214,18 @@ class QQNapcatAdapter(PlatformAdapterBase):
     # ======== 心跳检查 ========
 
     async def _heartbeat_loop(self):
-        logger.info("[QQNapcat] 心跳检查任务启动")
+        logger.info(f"适配器[{self.adapter_id}] 心跳检查任务启动")
 
         while self._is_running and self._websocket:
             await asyncio.sleep(self.heartbeat_interval * 1.5)
 
             if time.time() - self.last_heartbeat > self.heartbeat_interval * 2:
-                logger.error("[QQNapcat] 心跳超时，关闭连接以重新连接")
+                logger.error(f"适配器[{self.adapter_id}] 心跳超时，关闭连接以重新连接")
                 if self._websocket:
                     await self._websocket.close()
                 break
 
-        logger.info("[QQNapcat] 心跳检测任务结束")
+        logger.info(f"适配器[{self.adapter_id}] 心跳检测任务结束")
 
     # ======== adapter metadata ========
-
-    def get_metadata(self) -> Dict[str, Any]:
-        return {
-            "name": "qq_napcat",
-            "id": self.config.get("id", "default_qq_napcat"),
-            "description": "QQ Napcat WebSocket Adapter",
-        }
+    # get_metadata 方法已从 BasePlatformAdapter 移除

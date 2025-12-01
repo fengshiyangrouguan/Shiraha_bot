@@ -26,8 +26,18 @@ class Container:
             interface: 服务的类型或接口（通常是类名）。
             instance: 服务的单例实例。
         """
-        print(f"DI Container: 注册实例 {interface.__name__}")
-        self._services[interface] = instance
+        try:
+            if interface in self._services or interface in self._factories:
+                raise Exception(
+                    f"DI Container 注册失败：服务 {interface.__name__} 已经注册过，不能重复注册！"
+                )
+
+            print(f"DI Container: 注册实例 {interface.__name__}")
+            self._services[interface] = instance
+
+        except Exception as e:
+            # 这里你可以将错误继续抛出，也可以记录日志
+            raise e
 
     def register_factory(self, interface: Type[T], factory: Callable[[], T]):
         """

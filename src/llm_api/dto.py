@@ -19,6 +19,14 @@ class LLMMessage(BaseModel):
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        将 LLMMessage 对象转换为字典，并排除值为 None 的字段。
+        """
+        return self.model_dump(exclude_none=True)
+
+
+
 class APIResponse(BaseModel):
     """
     对 LLM API 响应的内部标准化数据结构。
@@ -56,5 +64,8 @@ class LLMMessageBuilder:
         self.messages.append(LLMMessage(role="tool", tool_call_id=tool_call_id, content=content))
         return self
     
-    def get_messages(self) -> List[LLMMessage]:
+    def get_message_dict(self) -> List[Dict[str, Any]]:
+        return [msg.model_dump(exclude_none=True) for msg in self.messages]
+    
+    def get_message_list(self) -> List[LLMMessage]:
         return self.messages

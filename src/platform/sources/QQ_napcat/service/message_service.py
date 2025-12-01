@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Callable
 
 from src.common.event_model.event import Event
 from src.common.event_model.info_data import ConversationInfo
-from src.platform.sources.QQ_napcat.utils.msg_api_build import (
+from src.platform.sources.qq_napcat.utils.msg_api_build import (
     build_text_seg,
     build_reply_seg,
     build_at_seg,

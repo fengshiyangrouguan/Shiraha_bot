@@ -1,0 +1,14 @@
+{
+    "name": "QQ Chat Cortex",
+    "version": "0.0.0",
+    "description": "QQ聊天皮层区，负责管理与QQ平台的交互，接收消息并转发至WorldModel，可发送消息和执行其他QQ相关操作。",
+    "main_class_path": "src.cortices.qq_chat.cortex.QQChatCortex",
+    "impetus": {
+        "impetus_name": "QQ相关",
+        "impetus_description":[
+            "好奇未读消息的内容是什么。",
+            "现在不想被打扰，只想赶紧简单回应一句，然后清净下来。",  
+            "想找某人或在群里好好聊聊天。"
+        ]
+    }
+}

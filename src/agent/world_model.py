@@ -1,9 +1,10 @@
 # src/agent/world_model.py
 import time
 from collections import deque
-from typing import List, Dict, Any, Deque, Optional
+from typing import List, Dict, Any, Deque, Optional, Type
+from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
 
-# 导入通用配置服务和我们为 bot.toml 设计的 Schema
+# 导入配置
 from src.system.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 
@@ -12,7 +13,7 @@ class WorldModel:
     世界模型 - Agent 状态管理器。
     负责管理 Agent 的所有状态，包括：
     1. 静态身份 (Identity)
-    2. 动态内在状态 (Internal State: mood, energy)
+    2. 动态内在状态 (Internal State: motive, mood, energy)
     3. 动态外部感知 (External Perception: stimuli)
     4. 记忆 (Memory)
     """
@@ -21,7 +22,7 @@ class WorldModel:
         
         # --- 1. 加载静态身份 ---
 
-        bot_config:BotConfig = container.resolve(BotConfig)
+        bot_config: BotConfig = container.resolve(BotConfig)
         persona_config = bot_config.persona
         mood_config = bot_config.mood
         
@@ -31,6 +32,7 @@ class WorldModel:
         self.bot_interest: List[str] = persona_config.bot_interest
 
         # --- 2. 初始化动态内在状态 ---
+        self.motive: str = ""
         self.mood: str = mood_config.initial_mood
         self.energy: int = mood_config.initial_energy
 
@@ -40,8 +42,44 @@ class WorldModel:
         self.alerts: List[str] = []
 
         # --- 4. 初始化记忆 ---
+        
+        # 使用字典来存储不同来源的事件流/状态
+        # 这是 WorldModel 的核心，用于存储各个 Cortex 维护的特定数据，纯内存操作
+        self.cortex_data: Dict[str, BaseModel] = {} 
+
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
         self.long_term_memory = None # 长期记忆占位符
+
+    async def get_data(self, key: str, data_type: Type[BaseModel]) -> Optional[BaseModel]:
+        """
+        从 WorldModel 中获取指定键的 Cortex 数据。
+        此方法纯内存操作。
+
+        Args:
+            key (str): 数据键名，例如 "qq_chat_data"。
+            data_type (Type[BaseModel]): 期望返回的数据类型（Pydantic BaseModel）。
+
+        Returns:
+            Optional[BaseModel]: 如果找到匹配类型的数据则返回，否则返回 None。
+        """
+        data = self.cortex_data.get(key)
+        if data and isinstance(data, data_type):
+            return data
+        # 如果类型不匹配或未找到，返回 None，由调用者处理创建新实例
+        return None
+
+    async def save_data(self, key: str, data: BaseModel) -> None:
+        """
+        将 Cortex 数据保存到 WorldModel 中。
+        此方法纯内存操作。
+
+        Args:
+            key (str): 数据键名，例如 "qq_chat_data"。
+            data (BaseModel): 要保存的数据对象（Pydantic BaseModel）。
+        """
+        self.cortex_data[key] = data
+        print(f"WorldModel: Cortex数据 '{key}' 已更新（内存中）。")
+
 
     def add_memory(self, action_summary: str):
         """将新的行动总结存入短期记忆。"""

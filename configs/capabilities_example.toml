@@ -1,0 +1,25 @@
+# configs/capabilities.toml
+
+# 定义 Agent 的高阶能力列表。
+# 这些能力将用于启发 MotiveEngine 生成动机。
+# 格式为：[[capability]] category="分类" description="详细描述"
+
+[[capability]]
+category = "QQ相关"
+description = "查看QQ的未读消息；与指定联系人或群组聊天。"
+
+[[capability]]
+category = "阅读"
+description = "浏览书架上的书籍；继续上次阅读。"
+
+[[capability]]
+category = "网页浏览"
+description = "打开和浏览网页，提取所需信息。"
+
+[[capability]]
+category = "日程管理"
+description = "查看当前日程；安排新的待办事项。"
+
+[[capability]]
+category = "生理活动"
+description = "在适当时候进行休息或睡眠以恢复精力。"

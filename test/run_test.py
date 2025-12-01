@@ -32,7 +32,7 @@ async def mock_post_method(event: Event):
 TEST_PORT = 8081
 mock_platform_config = [
     {
-        "name": "QQ_napcat",
+        "name": "qq_napcat",
         "enabled": True,
         "id": "test_qq_instance",
         "host": "127.0.0.1",

@@ -1,0 +1,13 @@
+# src/cortices/qq_chat/config/config.toml
+# QQ Chat Cortex 的配置文件
+
+# 是否启用此 Cortex
+enable = true
+
+
+
+[adapter]
+adapter_id = "qq_chat_adapter" # 自用 QQ 账号的适配器 ID
+platform_type = "qq_napcat" # 平台类型
+host = "127.0.0.1"
+port = 8080

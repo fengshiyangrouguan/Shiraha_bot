@@ -10,11 +10,11 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.platform.platform_manager import PlatformManager
-from src.platform.sources.QQ_napcat.service.message_service import NapcatMessageService
+from src.platform.sources.qq_napcat.service.message_service import NapcatMessageService
 from src.common.event_model.event import Event, ConversationInfo
 from src.common.event_model.event_data import Message, MessageSegment
 from src.common.event_model.info_data import UserInfo,ConversationInfo
-from src.platform.sources.QQ_napcat.utils.msg_api_build import (
+from src.platform.sources.qq_napcat.utils.msg_api_build import (
     build_at_seg,
     build_face_seg,
     build_image_seg,
@@ -35,7 +35,7 @@ event_queue = asyncio.Queue()
 
 mock_platform_config = [
     {
-        "name": "QQ_napcat",
+        "name": "qq_napcat",
         "enabled": True,
         "id": TEST_PLATFORM_ID,
         "host": "127.0.0.1",

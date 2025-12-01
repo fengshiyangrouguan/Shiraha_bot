@@ -11,7 +11,7 @@
 # 系统信息
 [system] 
 version = "0.0.0"
-owner_id = None
+owner_id = 1
 log_level = "DEBUG"
 
 # 静态人设
@@ -28,7 +28,7 @@ bot_personality = """
 
 bot_interest = ["传统音乐", "最新的游戏", "动漫和番剧", "网络迷因", "少女乐队番剧"]
 
-expression_style = "说话风格比较日常活泼，有天然的亲近感和少女感，语气自然，请回复的平淡一些，简短一些，说中文，不要刻意突出自身学科背景。"4
+expression_style = "说话风格比较日常活泼，有天然的亲近感和少女感，语气自然，请回复的平淡一些，简短一些，说中文，不要刻意突出自身学科背景。"
 
 
 [mood]

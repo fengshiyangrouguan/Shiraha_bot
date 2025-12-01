@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from src.platform.sources.QQ_napcat.utils import forward, image
+from src.platform.sources.qq_napcat.utils import forward, image
 from src.common.event_model.info_data import UserInfo, ConversationInfo
 from src.common.event_model.event import Event
 from src.common.event_model.event_data import (
@@ -13,7 +13,7 @@ from src.common.event_model.event_data import (
 
 # 仅用于类型提示，防止循环导入
 if TYPE_CHECKING:
-    from src.platform.sources.QQ_napcat.adapter import QQNapcatAdapter
+    from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 
 
 
@@ -88,7 +88,6 @@ class NapcatEventDispatcher:
                 data = base_64
 
             elif seg_type == "face":
-                #TODO: 在这里把表情id替换成表情文本,因为不同平台的表情id不同，在
                 raw_data = seg.get("data", {})
                 data = raw_data.get("id", {})
 
@@ -104,13 +103,12 @@ class NapcatEventDispatcher:
             segments=segments,
             raw_message=raw_event
         )
-        
-        metadata: Dict = self.adapter.get_metadata()
+        # 构建 Event
         event = Event(
             event_type="message",
-            event_id=str(object=raw_event.get("message_id", time.time())),
+            event_id=message.message_id,
             time=raw_event.get("time", int(time.time())),
-            platform=metadata[id],
+            platform=self.adapter.adapter_id,
             conversation_info=conversation_info,
             user_info=user_info,
             event_data=message
@@ -139,7 +137,7 @@ class NapcatEventDispatcher:
         if message_type == "private":
             sender:Dict = raw_event.get("sender", {})
             conversation_id = str(raw_event["user_id"])
-            name = sender.get("nickname") or None,    # 空字符串转为 None
+            name = sender.get("nickname")    # 空字符串转为 None
             parent_id = None                          # OneBot 群聊无父级概念
 
         elif message_type == "group":

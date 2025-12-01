@@ -14,7 +14,6 @@ class PersonaConfig(BaseModel):
     bot_personality: str
     bot_interest: List[str] = Field(default_factory=list)
     expression_style: str
-    initial_mood: str = "刚睡醒，思维缓存正在加载中，感觉有点迷糊，需要一会儿才能完全进入状态。"
 
 # [mood]
 class MoodConfig(BaseModel):

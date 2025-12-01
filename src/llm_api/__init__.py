@@ -5,12 +5,14 @@
 from .factory import LLMRequestFactory
 
 # 同时暴露异常类，方便上层捕获
-from .model_client.base_client import LLMException, APIError, NetworkConnectionError, EmptyResponseError
+from .exceptions import NetworkConnectionError,ReqAbortException,RespNotOkException,RespParseException,EmptyResponseException,ModelAttemptFailed
 
 __all__ = [
     "LLMRequestFactory",
-    "LLMException",
-    "APIError",
     "NetworkConnectionError",
-    "EmptyResponseError"
+    "ReqAbortException",
+    "RespNotOkException",
+    "RespParseException",
+    "EmptyResponseException",
+    "ModelAttemptFailed",
 ]

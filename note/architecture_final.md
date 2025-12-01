@@ -31,7 +31,7 @@ graph TD
     subgraph Agent Core (src/agent)
         A[AgentLoop] -- 驱动 --> B(MotiveEngine);
         B -- 生成意图 --> C(MainPlanner);
-        C -- 使用工具 --> D[FeatureManager];
+        C -- 使用工具 --> D[CortexManager];
         A -- 更新/读取 --> E[WorldModel];
         B -- 读取 --> E;
         C -- 读取 --> E;
@@ -70,18 +70,18 @@ graph TD
 这是 Agent 能力的来源。每个子目录都是一个高内聚的、自包含的功能单元。
 
 -   **`qq_chat/` (示例)**:
-    -   `manifest.json`: 特性清单文件。用于被 `FeatureManager` 自动发现和注册。它声明了特性名称、入口工具、子规划器路径、工具作用域等元数据。
+    -   `manifest.json`: 特性清单文件。用于被 `CortexManager` 自动发现和注册。它声明了特性名称、入口工具、子规划器路径、工具作用域等元数据。
     -   `planner.py`: 包含 `QQChatSubPlanner` 类，它继承自 `agent.planners.base_planner`，但重写了部分方法以优化聊天场景。
-    -   `tools.py`: 定义并实现 `send_message`, `send_emoji` 等仅在 `qq_chat` 作用域下可用的微观工具。
+    -   `tools.py`: 定义并实现 `send_message`, `send_emoji` 等仅在 `qq_chat` 作用域下可用的微观工具，和在main_planner下可用的工具。
 
-### 4.3. `FeatureManager` - 特性与工具的管理者
+### 4.3. `CortexManager` - 特性与工具的管理者
 
-`FeatureManager` 是一个在 Agent 启动时初始化的核心服务，它取代了传统的 `ToolManager`。
+`CortexManager` 是一个在 Agent 启动时初始化的核心服务，它取代了传统的 `ToolManager`。
 
--   **自动发现与注册**: 启动时，它会扫描 `src/features/` 目录，解析每个特性包的 `manifest.json`。
+-   **自动发现与注册**: 启动时，它会扫描 `src/cortices/` 目录，解析每个特性包的 `manifest.json`。
 -   **作用域管理**: 它根据清单文件，将不同特性的微观工具注册到各自的作用域下（如 `'qq_chat'`, `'web_browsing'`）。
 -   **入口工具生成**: 它会为每个特性动态创建一个“入口工具”（如 `enter_qq_chat_mode`），并将其注册到主规划器的 `'main'` 作用域下。
--   **委派执行**: 当主规划器调用某个入口工具时，`FeatureManager` 负责实例化对应的子规划器、切换工具作用域、执行子规划器的任务，并在结束后将作用域切回。
+-   **委派执行**: 当主规划器调用某个入口工具时，`CortexManager` 负责实例化对应的子规划器、切换工具作用域、执行子规划器的任务，并在结束后将作用域切回。
 
 ## 5. AgentLoop 详细工作流程图
 
@@ -113,7 +113,7 @@ graph TD
         D3 -- 调用普通工具<br>如 get_weather() --> D4[执行并获取结果];
         D4 --> D1;
 
-        D3 -- 调用入口工具<br>如 enter_chat_mode() --> E[FeatureManager 委派];
+        D3 -- 调用入口工具<br>如 enter_chat_mode() --> E[CortexManager 委派];
         
         subgraph "SubPlanner 任务"
             E --> E1[1. 切换工具作用域];
@@ -155,7 +155,7 @@ graph TD
 4.  **主规划**: `main_planner` 开始执行这个意图。在它的 ReAct 循环中，它会调用 `'main'` 作用域下的宏观工具。
 5.  **委派/执行**: 
     - 如果是普通工具，直接执行并获取结果，继续主规划循环。
-    - 如果是“入口工具”，则由 `FeatureManager` 委派给相应的**子规划器**。子规划器在自己的作用域和工具集下完成一个复杂的子任务，然后返回一个总结。
+    - 如果是“入口工具”，则由 `CortexManager` 委派给相应的**子规划器**。子规划器在自己的作用域和工具集下完成一个复杂的子任务，然后返回一个总结。
 6.  **完成/休眠**: 当主规划器判断高阶意图已经完成后，`AgentLoop` 进入休眠，等待下一次唤醒。
 7.  **中断**: 如果在任何时候（无论是在主规划还是子规划中）收到了“中断信号”，当前正在执行的任务会被立即取消，`AgentLoop` 会被强制拉回到步骤 `A`，以最高优先级处理新的世界状态。
 

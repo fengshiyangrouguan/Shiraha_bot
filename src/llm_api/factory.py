@@ -4,16 +4,12 @@ from .request import LLMRequest
 
 class LLMRequestFactory:
     """
-    负责创建和缓存不同任务的 LLMRequest 实例。
-    这是一个单例工厂。
+    创建并缓存不同任务的 LLMRequest 实例。
+    工厂本身不再是单例，由 main_system 负责确保只创建一次。
     """
-    _instance = None
-    _cache: Dict[str, LLMRequest] = {}
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(LLMRequestFactory, cls).__new__(cls)
-        return cls._instance
+    def __init__(self):
+        # 实例自己的缓存
+        self._cache: Dict[str, LLMRequest] = {}
 
     def get_request(self, task_name: str) -> LLMRequest:
         """
@@ -23,5 +19,7 @@ class LLMRequestFactory:
         if task_name not in self._cache:
             print(f"LLMRequestFactory: 首次为任务 '{task_name}' 创建 LLMRequest 实例。")
             self._cache[task_name] = LLMRequest(task_name=task_name)
+        
         return self._cache[task_name]
+
 

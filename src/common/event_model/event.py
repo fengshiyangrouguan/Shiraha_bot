@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set
 import copy
 
-from src.plugin_system.event_types import EventType # 导入事件类型
 from src.common.event_model.info_data import ConversationInfo, UserInfo
 from src.common.event_model.event_data import BaseEventData
 
@@ -20,7 +19,7 @@ class Event:
     time: int
     
     # --- 平台与来源信息 ---
-    platform: str               # qq, wechat, discord, telegram……
+    platform: str               # adapter_id
     chat_stream_id: str = None
     user_info: Optional[UserInfo] = None
     conversation_info: Optional[ConversationInfo] = None
@@ -37,9 +36,6 @@ class Event:
      # --- 事件内部处理控制 ---
     _propagation_stopped: bool = False   # 插件设置该标志位，阻断传播，默认不阻断
 
-    # 外部依赖（事件行为方法 需要 注入 manager）
-    #_platform_manager = field(default=None, repr=False, compare=False)
-    #_event_manager = field(default=None, repr=False, compare=False)
 
 
     # ----------------------------------------------------------------------

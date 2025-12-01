@@ -28,7 +28,6 @@ class ConfigService:
         "llm_api": ("configs/llm_api_config.toml", LLMApiConfig),
         "bot": ("configs/bot_config.toml", BotConfig),
         # 未来若有新配置，在此处添加即可
-        # "database": ("configs/database.toml", DatabaseConfig),
     }
 
     def __new__(cls):

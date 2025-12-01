@@ -9,7 +9,7 @@ class BaseEventData(ABC):
     定义了消息对象必须具备的核心属性和方法。
     """
     
-    LLM_plain_text: Optional[str] = None
+    LLM_plain_text: Optional[str] = field(default=None, init=False)
     """解析完拼接的纯文本，用于短期记忆生成"""
     
     @abstractmethod
@@ -41,7 +41,7 @@ class Message(BaseEventData):
     """
     
     # 消息 ID（平台提供或适配器生成）
-    message_id: str
+    message_id: Optional[str] = None
     # 消息内容片段列表（text/image/mention 等）
     segments: List[MessageSegment] = field(default_factory=list)
     # 平台消息原始信息

@@ -51,16 +51,24 @@ class OpenAIClient(BaseClient):
         try:
             messages = [{"role": "user", "content": prompt}]
 
-            params = {
+            # 分离标准参数和额外参数
+            standard_params = {
                 "model": model_config.model_identifier,
                 "messages": messages,
                 "temperature": kwargs.get("temperature", 0.7),
                 "max_tokens": kwargs.get("max_tokens", 4096),
-                **model_config.extra_params,
-                **kwargs.get("extra_body", {})
             }
+
+            # 合并所有额外参数到一个 extra_body 字典中
+            extra_body = model_config.extra_params.copy()
+            extra_body.update(kwargs.get("extra_body", {}))
+
+            # 最终的请求参数
+            request_params = standard_params
+            if extra_body:
+                request_params["extra_body"] = extra_body
             
-            response = await self.client.chat.completions.create(**params, stream=False)
+            response = await self.client.chat.completions.create(**request_params, stream=False)
 
             if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                 raise EmptyResponseException() # 抛出我们自己的标准异常
