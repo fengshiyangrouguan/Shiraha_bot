@@ -17,7 +17,7 @@ class MotiveEngine:
         """
         初始化动机引擎。
         """
-        logger.info("MotiveEngine: 初始化...")
+        logger.info("开始初始化动机引擎...")
         
         llm_factory = container.resolve(LLMRequestFactory)
         self.llm_request = llm_factory.get_request(task_name="motive")
@@ -43,19 +43,16 @@ class MotiveEngine:
         根据 WorldModel 和 prompt_design.md 的设计构建 LLM 提示。
         """
         context = world_model.get_context_for_motive()
-        notification = context['notification']
-        if context['notification'] == []:
-            notification = "当前没有新的未读消息。"
-
+        
         prompt_template = f"""
 你叫 {context['bot_name']}。
 你是 {context['bot_identity']}。
-你的性格是 {context['bot_personality']}，你的兴趣包括 {context['bot_interst']}。
+你的性格是 {context['bot_personality']}，你的兴趣包括 {context['bot_interest']}。
 
 现在是 {context['time']}。
 此刻你的心理状态是：{context['mood']}。
 
-{notification}
+{context["notifications"]}
 {context['alert']}
 
 你最近一次活动的总结如下：
@@ -81,7 +78,7 @@ class MotiveEngine:
         """
         impetus =self._format_impetus_descriptions(collected_impetus_descriptions)
         world_model = container.resolve(WorldModel)
-        logger.info("正在生成动机...")
+        logger.info(event="正在生成动机...")
         prompt_str = self._build_prompt(world_model,impetus)
 
         try:
@@ -97,7 +94,7 @@ class MotiveEngine:
                 return motive
             else:
                 """ LLM 未返回内容，返回一个默认的休息动机 """
-                logger.warning("新的动机: LLM 未返回明确动机，休息一下。")
+                logger.warning("新的动机: LLM 未返回明确动机，选择休息一下。")
                 world_model.motive = "休息一下"
                 return "休息一下"
 
@@ -106,10 +103,3 @@ class MotiveEngine:
             logger.error(f"生成动机时 LLM 请求失败: {e}")
             world_model.motive = "处理内部错误"
             return "处理内部错误"
-
-
-
-# 例如：
-# “QQ 那边的对话把我搞得有点烦，我想刷刷微博缓一缓。”
-# “已经这么晚了，我应该读会书，让自己静下来。”
-# “微博看到有新留言，我有点好奇，想进去看看发生了什么。”

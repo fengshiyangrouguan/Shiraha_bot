@@ -8,7 +8,7 @@ from src.common.event_model.event import Event
 from src.system.di.container import container
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import UserInfoDB, ConversationInfoDB, EventDB
-from .qq_data import QQChatData
+from .qq_chat_data import QQChatData
 from .chat_stream import QQChatStream # 确保 QQChatStream 导入正确
 
 
@@ -48,12 +48,11 @@ class QQChatEventProcessor:
                 await self.process_event(event)
             except Exception as e:
                 # 确保 conversation_info 存在再尝试获取 stream_id
-                stream_id = f"{event.platform}_{event.conversation_info.conversation_id}" if event.conversation_info else "system_event"
+                stream_id = f"{event.conversation_info.conversation_id}" if event.conversation_info else "system_event"
                 logger.error(f"处理事件失败 ({stream_id}): {e}", exc_info=True)
             finally:
                  self._event_queue.task_done()
 
-    # post_event_to_queue 方法不再需要，因为 _event_queue 已在 __init__ 中传入，Cortex 直接调用 _event_queue.put
     async def post_event_to_queue(self, event: Event) -> Any:
         await self._event_queue.put(event)
         return
@@ -68,26 +67,28 @@ class QQChatEventProcessor:
         """
         
         # 1. 从 WorldModel 获取/创建 QQChatData 顶层状态对象
-        qq_data: QQChatData = await self.world_model.get_data("qq_chat_data", QQChatData)
-        if not qq_data:
-            qq_data = QQChatData()
+        qq_chat_data: QQChatData = await self.world_model.get_cortex_data("qq_chat_data")
+        if not qq_chat_data:
+            qq_chat_data = QQChatData()
 
         # 2. 获取/创建对应的 QQChatStream
         # 对于没有 conversation_info 的系统事件，可以将其视为一个特殊的流
-        stream_id = f"{event.platform}_{event.conversation_info.conversation_id}" if event.conversation_info else f"{event.platform}_system_event"
-        chat_stream = qq_data.get_or_create_stream(stream_id)
+        chat_stream:QQChatStream = qq_chat_data.get_or_create_stream(event.conversation_info)
 
-        # 3. 预处理事件数据，生成 LLM 纯文本 (如果适用)
+        # 3. 预处理事件数据，生成 LLM 纯文本
         if event.event_type == "message":
 
             await event.event_data.process_to_context()
         
         # 4. 更新 QQChatStream 的内部状态 (滑动窗口、未读计数等)
         chat_stream.add_event(event)
+
+        # 5. 将更新后的 QQChatData 和 上下文完整保存回 WorldModel
+        self.world_model.notifications["QQ聊天"] = qq_chat_data.total_unread_count
+        await self.world_model.save_cortex_data("qq_chat_data", qq_chat_data)
+
         
-        # 5. 将更新后的 QQChatData 完整保存回 WorldModel
-        await self.world_model.save_data("qq_chat_data", qq_data)
-        logger.debug(f"QQChatData for stream ({stream_id}) 已更新并保存到 WorldModel。")
+        logger.debug(f"QQChatData for stream ({chat_stream.stream_id}) 已更新并保存到 WorldModel。")
 
         # 6. 数据库永久化存储 (EventDB, UserInfoDB, ConversationInfoDB)
         # 注意：这里需要将 Pydantic/dataclass 对象转换为 SQLModel 对象
@@ -100,7 +101,6 @@ class QQChatEventProcessor:
                 user_cardname=event.user_info.user_cardname
             )
             await self.database_manager.upsert(user_db)
-            print(json.dumps(user_db.model_dump(), ensure_ascii=False, indent=4))
             logger.debug(f"UserInfoDB (ID: {user_db.user_id}) 已保存。")
 
         conversation_db: Optional[ConversationInfoDB] = None
@@ -113,7 +113,6 @@ class QQChatEventProcessor:
                 platform_meta=event.conversation_info.platform_meta
             )
             await self.database_manager.upsert(conversation_db)
-            print(json.dumps(conversation_db.model_dump(), ensure_ascii=False, indent=4))
 
             logger.debug(f"ConversationInfoDB (ID: {conversation_db.conversation_id}) 已保存。")
         
@@ -136,8 +135,7 @@ class QQChatEventProcessor:
             event_metadata=event.event_data.metadata
         )
         await self.database_manager.upsert(event_db)
-        print(json.dumps(event_db.model_dump(), ensure_ascii=False, indent=4))
         logger.info(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
 
-        logger.info(f"事件 ({event.event_type}) 针对流 ({stream_id}) 处理完成。")
+        logger.info(f"事件 ({event.event_type}) 针对流 ({chat_stream.stream_id}) 处理完成。")
 

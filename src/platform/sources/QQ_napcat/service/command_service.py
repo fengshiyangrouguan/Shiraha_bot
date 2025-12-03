@@ -15,51 +15,68 @@ class NapcatCommandService:
         self._futures: Dict[str, asyncio.Future] = {}
 
     # ======== 顶层api ========
-    async def get_image(self, file_id: str) -> Dict[str, Union[str, int]]:
+    async def get_message(self, message_id: str) -> Dict[str, Any]:
         """
-        根据文件 ID 获取图片详细信息。
-
-        :param file_id: 文件在 OneBot 客户端内部的唯一 ID。
-        :return: 包含文件详情的字典（如 url, file_size, file_name 等）。
-        :raises Exception: 发送失败或客户端返回错误时，抛出异常。
+        获取指定消息 ID 的消息内容。
+        
+        Args:
+            message_id (str): 目标消息的唯一标识符。
+            
+        Returns:
+            Dict[str, Any]: 包含消息内容及相关信息的字典。
+        
+        Raises:
+            发送失败，抛出异常。
         """
-        
-        action = "get_image" 
-        params = {"file_id": file_id}
-
-        # 1. 发起异步命令并等待响应
-        # 响应结构：{"status": "ok", "retcode": 0, "data": {...}, ...}
-        try:
-            response = await self.send_command(action, params)
-            
-            # 2. 解析响应并进行错误检查
-            status = response.get("status")
-            retcode = response.get("retcode", -1)
-            
-            # 检查状态是否为 'ok' 且 retcode 是否为 0
-            if status == "ok" and retcode == 0:
-                # 成功：返回 data 字段中的所有内容
-                data: Dict = response.get("data", {})   
-                # 尝试将 file_size 转换为 int，如果失败则保持原样
-                file_size_str: str = data.get("file_size")
-                if file_size_str and file_size_str.isdigit():
-                    data["file_size"] = int(file_size_str)
-                
-                return data
-        
-            # 3. 失败：抛出异常
-            message = response.get("message", "Unknown error")
-            wording = response.get("wording", "")
-        except TimeoutError:
-            logger.error(f"命令超时")
-            return None
-        except Exception as e:
-            logger.error(f"命令失败: {e}")
-            return None
-        error_msg = f"获取文件详情失败 (Action: {action}). Code: {retcode}. Message: {message}. Wording: {wording}"
-        logger.warning(error_msg)
-        return None
+        action = "get_msg"
+        params = {
+            "message_id": message_id
+        }
+        # 直接调用带等待机制的 send_command
+        response_data = await self.send_command(action, params)
+        return response_data
     
+    async def get_group_member_list(self, group_id: Union[int, str]) -> List[Dict[str, Any]]:
+        """
+        获取指定群组的成员列表。
+        
+        Args:
+            group_id (Union[int, str]): 目标群号。
+            
+        Returns:
+            List[Dict[str, Any]]: 包含群成员信息的字典列表。
+        
+        Raises:
+            发送失败，抛出异常。
+        """
+        action = "get_group_member_list"
+        params = {
+            "group_id": int(group_id)  # 确保传入的是整数类型
+        }
+        # 直接调用带等待机制的 send_command
+        response_data = await self.send_command(action, params)
+        return response_data
+    
+    async def get_user_info(self, user_id: Union[int, str]) -> Dict[str, Any]:
+        """
+        获取指定用户 ID 的用户信息。
+        
+        Args:
+            user_id (Union[int, str]): 目标用户的 QQ 号。
+            
+        Returns:
+            Dict[str, Any]: 包含用户信息的字典。
+        
+        Raises:
+            发送失败，抛出异常。
+        """
+        action = "get_stranger_info"
+        params = {
+            "user_id": int(user_id)  # 确保传入的是整数类型
+        }
+        # 直接调用带等待机制的 send_command
+        response_data = await self.send_command(action, params)
+        return response_data
     
     async def get_login_info(self) -> Dict[str, Any]:
         """
@@ -156,13 +173,12 @@ class NapcatCommandService:
         future = asyncio.get_event_loop().create_future()
         self._futures[echo] = future
 
-        payload = json.dumps({
+        payload = {
             "action": action,
             "params": params,
             "echo": echo
-        })
+        }
 
-        print(f"发送命令{payload}")
         await self.adapter._send_websocket(payload)
         # 等待future类被传回响应数据赋值
         return await future

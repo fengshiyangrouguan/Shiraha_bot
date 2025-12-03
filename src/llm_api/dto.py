@@ -4,11 +4,11 @@ from pydantic import BaseModel
 
 class ToolCall(BaseModel):
     """
-    LLM 请求调用工具时，我们系统内部使用的标准化数据结构。
+    LLM 请求调用工具时，系统内部使用的标准化数据结构。
     """
-    call_id: str
-    func_name: str
-    args: Optional[Dict[str, Any]] = None
+    # call_id: str
+    tool_name: str
+    parameters: Optional[Dict[str, Any]] = None
 
 class LLMMessage(BaseModel):
     """
@@ -31,6 +31,7 @@ class APIResponse(BaseModel):
     """
     对 LLM API 响应的内部标准化数据结构。
     无论底层是哪个 LLM，都应该被解析成这个格式。
+    !!!暂时还没有使用!!!
     """
     content: Optional[str] = None
     reasoning: Optional[str] = None

@@ -15,6 +15,7 @@ from src.common.event_model.event_data import (
 # 仅用于类型提示，防止循环导入
 if TYPE_CHECKING:
     from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
+    from src.platform.sources.qq_napcat.service.command_service import NapcatCommandService
 
 
 
@@ -100,16 +101,30 @@ class NapcatEventDispatcher:
 
             elif seg_type == "reply":
                 #TODO: reply和at均有问题，需要改为调用api从id获取内容
-                reply_name = reply_at.get_reply_name(raw_event)
-                reply_text = reply_at.get_reply_text(raw_event)
-                metadata["reply_id"] = data["id"]
-                metadata["reply_text"] = reply_text
-                data = reply_name
+                response = await self.adapter.command_api.get_message(data["id"])
+                response_user_id = response["data"].get("sender", {}).get("user_id")
+                response_user_nickname = response["data"].get("sender", {}).get("nickname")
+                metadata["reply_message_id"] = data["id"]
+                metadata["reply_user_id"] = str(response_user_id)
+                data = response_user_nickname
+                
 
             elif seg_type == "at":
-                at_name = reply_at.get_at_nickname(raw_event)
-                metadata["at_id"] = data["qq"]
-                data = at_name
+                if "at_user" not in metadata:
+                    metadata["at_user"] = []
+                if data["qq"] != "all":  
+                    response = await self.adapter.command_api.get_user_info(data["qq"])
+                    at_nickname = response["data"].get("nickname")
+
+                    if data["qq"] not in metadata["at_user"]:
+                        metadata["at_user"].append(str(data["qq"]))
+                        data = at_nickname
+                elif data["qq"] == "all":
+                    metadata["at_user"].append("all")
+                    data = "全体成员"
+                
+
+                
             
             #TODO:判断自己有没有被at
 
@@ -142,10 +157,11 @@ class NapcatEventDispatcher:
 
     def _parse_user_info(self,raw_event: Dict[str, Any]) -> UserInfo:
         sender:Dict = raw_event.get("sender", {})
+        user_nickname = sender.get("nickname") or None
         user_info = UserInfo(
                         user_id=str(raw_event["user_id"]),        # 统一转为 str
-                        user_nickname=sender.get("nickname") or None,    # 空字符串转为 None
-                        user_cardname=sender.get("card") or None         # 空字符串转为 None
+                        user_nickname=user_nickname,
+                        user_cardname=sender.get("card") or user_nickname
                     )
         return user_info
 
@@ -167,7 +183,7 @@ class NapcatEventDispatcher:
 
         conversation_info = ConversationInfo(
                                 conversation_id=conversation_id,
-                                conversation_type=message_type,  # type: ignore  # 因已校验，安全
+                                conversation_type=message_type,  
                                 conversation_name=name,
                                 parent_id=parent_id,
                                 platform_meta=platform_meta

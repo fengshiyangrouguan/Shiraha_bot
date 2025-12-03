@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
 from src.common.event_model.event import Event
+from src.common.event_model.info_data import ConversationInfo
 
 # 定义滑动窗口大小常量
 MAX_LLM_CONTEXT_SIZE = 12
@@ -24,7 +25,8 @@ class QQChatStream(BaseModel):
     代表一个独立的 QQ 聊天流（如一个群聊或私聊）。
     这个对象将被保存在 WorldModel 中，作为 Cortex 内部处理的主要数据单元。
     """
-    stream_id: str = Field(..., description="唯一的流 ID，例如 'qq_group_123456'")
+    stream_id: str = Field(..., description="唯一的流 ID，直接使用conversation_id")
+    conversation_info:ConversationInfo
     
     # LLM 相关上下文
     llm_context: List[QQChatMessage] = Field(default_factory=list, description="用于 LLM 请求的滑动窗口消息列表")
@@ -79,3 +81,36 @@ class QQChatStream(BaseModel):
         """
         self.unread_count = 0
         self.unread_since = None # 清除未读开始时间
+
+    def build_chat_history_for_llm(self, separator: str = "\n---\n") -> str:
+        """
+        根据 llm_context 列表构建一个用于 LLM 输入的格式化聊天历史字符串。
+
+        Args:
+            separator: 用于分隔每条消息的字符串。
+
+        Returns:
+            格式化后的聊天历史字符串。
+        """
+        history_lines = []
+        
+        # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
+        for i, msg in enumerate(self.llm_context):
+            
+            # 确定发送者名称：优先使用名片，其次是昵称，最后使用用户 ID
+            sender_cardname = msg.user_cardname or "未知用户"
+            sender_nickname = msg.user_nickname or "未知用户"
+            
+            # 格式化时间戳（可选，但通常有助于 LLM 理解顺序）
+            timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+            # 格式化消息内容：[序号] [时间] 发送者: 消息内容
+            # 注意：i 是从 0 开始的索引
+            #TODO: 以后去除id，LLM想要的话，提供nickname 从数据库查找
+            line = (
+                f"[{i+1}] [{timestamp_str}] {sender_cardname}({sender_nickname} id:{msg.user_id}): {msg.content or '[消息内容为空]'}"
+            )
+            history_lines.append(line)
+        
+        # 使用指定的分隔符连接所有消息行
+        return separator.join(history_lines)

@@ -41,7 +41,7 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
         self._server_task: Optional[asyncio.Task] = None
         self._websocket: Optional[Server.WebSocketServerProtocol] = None
 
-        # 心跳检测
+        # 心跳检测相关
         self.last_heartbeat: float = 0
         self.heartbeat_interval: float = 30
         self._heartbeat_checker_task: Optional[asyncio.Task] = None
@@ -54,12 +54,14 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
     # ======== 生命周期管理 ========
 
     def run(self) -> asyncio.Task:
-        logger.info(f"适配器[{self.adapter_id}] 准备启动 websocket 服务 ws://{self.host}:{self.port}")
+        """适配器的启动入口，启动 WebSocket 服务器并开始监听连接"""
+        logger.info(f"适配器[{self.adapter_id}] 启动中...")
         self._is_running = True
         self._server_task = asyncio.create_task(self._run_server())
         return self._server_task
 
     async def terminate(self):
+        """适配器的关闭入口，关闭 WebSocket 连接并停止服务器任务"""
         logger.info(f"适配器[{self.adapter_id}] 停止中...")
         self._is_running = False
 
@@ -81,6 +83,7 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
     # ======== WebSocket server logic ========
 
     async def _run_server(self):
+        """启动 WebSocket 服务器并处理连接重试"""
         while self._is_running:
             try:
                 async with Server.serve(
@@ -146,22 +149,21 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
             return
 
         # Napcat 原始数据打印（用于调试）
-        print(json.dumps(raw_event_dict, ensure_ascii=False, indent=2))
+        logger.debug(json.dumps(raw_event_dict, ensure_ascii=False, indent=2))
         
         # 处理命令响应
         if "echo" in raw_event_dict:
-            print("已收到echo")
             self.command_api.set_response(raw_event_dict["echo"], raw_event_dict)
 
         post_type = raw_event_dict.get("post_type")
         if post_type == "meta_event":
             # 处理元事件（如心跳、生命周期事件）
             # 不进入 Event 队列
-            await self._handle_meta_event(raw_event_dict)
+            asyncio.create_task(self._handle_meta_event(raw_event_dict))
             return
         
         # 进入event_queue的交给 dispatcher（核心）
-        await self.dispatcher.dispatch(raw_event_dict)
+        asyncio.create_task(self.dispatcher.dispatch(raw_event_dict))
 
     # ======== 给 API 层使用的发送接口 ========
 
@@ -171,7 +173,9 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
             raise ConnectionError("WebSocket 未连接，无法发送消息")
         
         try:
+            logger.debug(f"适配器[{self.adapter_id}] 发送数据: {payload}")
             await self._websocket.send(json.dumps(payload))
+
         except Exception as e:
             logger.error(f"适配器[{self.adapter_id}] WebSocket 发送失败：{e}", exc_info=True)
 
@@ -226,6 +230,3 @@ class QQNapcatAdapter(BasePlatformAdapter): # 继承 BasePlatformAdapter
                 break
 
         logger.info(f"适配器[{self.adapter_id}] 心跳检测任务结束")
-
-    # ======== adapter metadata ========
-    # get_metadata 方法已从 BasePlatformAdapter 移除

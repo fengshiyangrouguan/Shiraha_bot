@@ -37,9 +37,9 @@ class ConversationInfo:
     """
 
     conversation_id: str
-    conversation_type: Literal["private", "group", "channel", "thread"]
+    conversation_type: Literal["private", "group", "channel", "thread","unknown"]
 
-    # 便于展示的名字，不参与逻辑
+    # 便于展示的名字
     conversation_name: Optional[str] = None
 
     # 对于 thread / forum topic 等结构化对话十分关键

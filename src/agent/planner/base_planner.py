@@ -8,40 +8,42 @@ from src.agent.world_model import WorldModel
 from src.common.logger import get_logger
 from .planner_result import PlanResult
 
-logger = get_logger("Planner")
-
 class BasePlanner(ABC):
     """
     所有规划器的抽象基类。
     它封装了与 LLM 交互的通用逻辑，子类只需专注于构建自己的 Prompt。
     """
-    def __init__(self, task_name: str):
+    def __init__(self, task_name: str, logger_name: Optional[str] = "Planner"):
         """
         初始化规划器，并从 DI 容器中获取其所需的 LLMRequest 实例。
         
         Args:
             task_name (str): 与 config.toml 中 [model_task_config] 对应的任务名称。
+            logger_name (str, optional): Logger 的名称。如果为 None，则使用子类的类名。
         """
         llm_factory = container.resolve(LLMRequestFactory)
         self.world_model: WorldModel = container.resolve(WorldModel)
         self.llm_request = llm_factory.get_request(task_name)
-        print(f"Planner已初始化，使用任务配置 '{task_name}'。")
+        
+        self.logger = get_logger(logger_name)
+        self.logger.debug(f"planner 已初始化。")
 
     @abstractmethod
-    def _build_prompt(self, world_model:WorldModel) -> List[Dict[str, Any]]:
-        """
+    async def plan(self) -> List[Dict[str, Any]]:
+        """ 
         构建特定于此规划器的 LLM 提示。
         每个子类都必须实现此方法，以定义自己的思考方式。
         """
         raise NotImplementedError
 
 
-    async def plan(self, world_model: WorldModel) -> Optional[PlanResult]:
+    async def send_to_LLM(self, prompt:Dict) -> Optional[PlanResult]:
         """
-        执行一次完整的规划流程：构建提示 -> 调用 LLM -> 解析与校验 -> 返回标准化 PlanResult。
+        调用 LLM 接口 -> 解析与校验 -> 返回标准化 PlanResult。
         """
 
-        prompt_messages = self._build_prompt(world_model)
+        prompt_messages = prompt
+        print(f"planner提示词{prompt_messages}")
 
         try:
             # 发送给 LLM 的是序列化后的 prompt
@@ -50,16 +52,16 @@ class BasePlanner(ABC):
             )
             
             if not content:
-                logger.error(f"未返回内容")
+                self.logger.error(f"未返回内容")
                 return None
 
-            logger.info(f"LLM原始内容: {content}")
+            self.logger.debug(f"LLM原始内容: {content}")
 
             # 尝试解析 JSON
             try:
                 parsed = json.loads(content)
             except json.JSONDecodeError:
-                logger.error(f"LLM返回内容不是合法JSON。")
+                self.logger.error(f"LLM返回内容不是合法JSON。")
                 return None
 
             # ----------- 校验 JSON 结构 ---------------
@@ -67,8 +69,8 @@ class BasePlanner(ABC):
             missing_top = [k for k in required_top_fields if k not in parsed]
 
             if missing_top:
-                logger.error(f"JSON缺少必要字段: {missing_top}")
-                logger.error(
+                self.logger.error(f"JSON缺少必要字段: {missing_top}")
+                self.logger.error(
                     f"返回的JSON必须类似:\n"
                     '{\n'
                     '  "thought": "....",\n'
@@ -87,10 +89,10 @@ class BasePlanner(ABC):
             ]
 
             if missing_action:
-                logger.error(
+                self.logger.error(
                     f"action 字段缺少必要字段: {missing_action}"
                 )
-                logger.error(
+                self.logger.error(
                     f"action 必须类似:\n"
                     '  "action": {\n'
                     '    "tool_name": "xxx",\n'
@@ -101,15 +103,15 @@ class BasePlanner(ABC):
 
             # ----------- 字段类型检查 ---------------
             if not isinstance(parsed["thought"], str):
-                logger.error(f"字段 thought 必须是字符串。收到: {type(parsed['thought'])}")
+                self.logger.error(f"字段 thought 必须是字符串。收到: {type(parsed['thought'])}")
                 return None
 
             if not isinstance(parsed["action"]["tool_name"], str):
-                logger.error(f"字段 tool_name 必须是字符串。收到: {type(parsed['tool_name'])}")
+                self.logger.error(f"字段 tool_name 必须是字符串。收到: {type(parsed['tool_name'])}")
                 return None
 
             if not isinstance(parsed["action"]["parameters"], dict):
-                logger.error(f"字段 parameters 必须是一个 dict。收到: {type(parsed['parameters'])}")
+                self.logger.error(f"字段 parameters 必须是一个 dict。收到: {type(parsed['parameters'])}")
                 return None
 
             result = PlanResult(
@@ -120,14 +122,14 @@ class BasePlanner(ABC):
             )
 
             # ----------- 打印成功日志 ---------------
-            logger.info("规划生成成功：")
-            logger.info(f"  - 思考过程: {result.thought}")
-            logger.info(f"  - 计划行动: 调用工具 '{result.tool_name}' 参数: {result.parameters}")
+            self.logger.info("规划生成成功：")
+            self.logger.info(f"  - 思考过程: {result.thought}")
+            self.logger.info(f"  - 计划行动: 调用工具 '{result.tool_name}' 参数: {result.parameters}")
 
             return result
 
         except Exception as e:
-            logger.error(f"LLM 调用失败: {e}")
+            self.logger.error(f"LLM 调用失败: {e}")
             return None
 
 

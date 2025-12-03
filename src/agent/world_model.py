@@ -29,7 +29,7 @@ class WorldModel:
         self.bot_name: str = persona_config.bot_name
         self.bot_identity: str = persona_config.bot_identity
         self.bot_personality: str = persona_config.bot_personality
-        self.bot_interest: List[str] = persona_config.bot_interest
+        self.bot_interest: str = ','.join(persona_config.bot_interest)
 
         # --- 2. 初始化动态内在状态 ---
         self.motive: str = ""
@@ -38,7 +38,7 @@ class WorldModel:
 
         # --- 3. 初始化动态外部感知 ---
         # 使用列表来存储刺激物，方便管理
-        self.notifications: List[str] = []
+        self.notifications: Dict[str,Any] = {}
         self.alerts: List[str] = []
 
         # --- 4. 初始化记忆 ---
@@ -50,7 +50,7 @@ class WorldModel:
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
         self.long_term_memory = None # 长期记忆占位符
 
-    async def get_data(self, key: str, data_type: Type[BaseModel]) -> Optional[BaseModel]:
+    async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """
         从 WorldModel 中获取指定键的 Cortex 数据。
         此方法纯内存操作。
@@ -63,12 +63,12 @@ class WorldModel:
             Optional[BaseModel]: 如果找到匹配类型的数据则返回，否则返回 None。
         """
         data = self.cortex_data.get(key)
-        if data and isinstance(data, data_type):
+        if data:
             return data
-        # 如果类型不匹配或未找到，返回 None，由调用者处理创建新实例
+        # 如果未找到，返回 None，由调用者处理创建新实例
         return None
 
-    async def save_data(self, key: str, data: BaseModel) -> None:
+    async def save_cortex_data(self, key: str, data: BaseModel) -> None:
         """
         将 Cortex 数据保存到 WorldModel 中。
         此方法纯内存操作。
@@ -114,8 +114,20 @@ class WorldModel:
         """
         # --- 格式化通知和警报 ---
         notification_str = ""
-        if self.notifications:
-            notification_str = "你收到了以下新通知：\n- " + "\n- ".join(self.notifications)
+        if self.notifications != {}:
+            result_parts = []
+            for key, value in self.notifications.items():
+                # 1. 格式化键名，并在后面加上中文冒号
+                key_str = f"{key}："
+                value_str = f"收到未读消息 {value} 条"
+                entry = f"{key_str}\n{value_str}\n"
+                result_parts.append(entry)
+                
+            # 将所有格式化后的部分连接起来
+            # 使用 "" 作为分隔符，因为每个 entry 已经自带换行符
+            notification_str = "未读消息列表：\n- " + "\n".join(result_parts).strip()
+        else:
+            notification_str = "当前没有未读消息：\n- " + "\n- ".join(self.notifications)
         
         alert_str = ""
         if self.alerts:
@@ -132,10 +144,10 @@ class WorldModel:
             "bot_name": self.bot_name,
             "bot_identity": self.bot_identity,
             "bot_personality": self.bot_personality,
-            "bot_interst": ", ".join(self.bot_interest), 
+            "bot_interest": ", ".join(self.bot_interest), 
             "time": time.strftime('%Y年%m月%d日 %H:%M:%S 星期%A'),
             "mood": self.mood,
-            "notification": notification_str or "当前没有新通知。",
+            "notifications": notification_str,
             "alert": alert_str or "当前没有紧急警报。",
             "action_summary": action_summary_str
         }

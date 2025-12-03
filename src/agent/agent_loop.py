@@ -10,6 +10,7 @@ from src.agent.world_model import WorldModel
 from src.cortices.manager import CortexManager
 from src.agent.planner.planner_result import PlanResult
 from src.system.di.container import container
+from src.llm_api.dto import ToolCall
 
 logger = get_logger("AgentLoop")
 
@@ -33,6 +34,52 @@ class AgentLoop:
         self._main_task: Optional[asyncio.Task] = None
         self.heartbeat_interval = 30 
 
+    async def _execute_motive_plan(self, motive: str):
+        """
+        在一个给定的动机下，执行 Thought-Action-Observation 循环。
+        """
+        max_steps = 10  # 限制循环次数，防止无限循环
+        current_step = 0
+        previous_observation = None # 存储上一步的观察结果 (Observation)
+        
+        while current_step < max_steps:
+            current_step += 1
+            
+            logger.info(f"  - 内部循环: 步骤 {current_step}/{max_steps}，动机: '{motive}'")
+            
+            # 1. 规划 (Plan) - 接收动机和上一步的观察结果
+            plan_result: PlanResult = await self.main_planner.plan(motive, previous_observation)
+
+            if plan_result.tool_name == "finish":
+                logger.info(f"  - 规划器 选择停止。总步数: {current_step}")
+                break # 退出循环
+
+            else:
+                logger.info(f"  - 思考过程: {plan_result.thought}")
+                logger.info(f"  - 计划行动: 调用工具 '{plan_result.tool_name}' 参数: {plan_result.parameters}")
+                
+                tool_call = ToolCall(tool_name=plan_result.tool_name, parameters=plan_result.parameters)
+
+                tool_result = await self.cortex_manager.execute_tool(tool_call)
+                logger.info(f"  - 工具执行结果: {tool_result}")
+                previous_observation = f"在上一轮规划行动中，我决定 {plan_result.thought}，结果是: {tool_result}"
+
+            # 3. 反思与记忆
+            self._record_step_memory(motive, plan_result, tool_result)
+            
+        if current_step >= max_steps:
+            logger.warning(f"  - 达到最大执行步数 {max_steps}，强制退出循环。")
+            self.world_model.add_memory(f"对于动机“{motive}”，我似乎陷入了困境，执行了 {max_steps} 步后仍未完成。")
+
+    def _record_step_memory(self, motive: str, plan: PlanResult, tool_result: str):
+        """记录单步的记忆"""
+        memory_entry = (
+            f"我的规划：{plan.thought}。\n"
+            f"执行结果是: {tool_result}"
+        )
+        self.world_model.add_memory(memory_entry)
+        logger.info("  - 单步记忆已更新。")
+
     async def _run_once(self):
         """
         执行一次完整的“感知-动机-规划-行动”循环。
@@ -40,47 +87,21 @@ class AgentLoop:
         logger.debug(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] --- AgentLoop 心跳 ---")
 
         try:
-            # 1. 感知 (Perceive) - 隐含在动机引擎中
-
-            # 先刷新动机，为以后中途热插拔 Cortex 做准备
+            # 1. 感知 (Perceive) & 动机 (Motive)
             impetus_descriptions = self.cortex_manager.get_collected_impetus_descriptions()
             motive = await self.motive_engine.generate_motive(impetus_descriptions)
             
-            if not motive:
+            if not motive or "无" in motive:
                 logger.info(f"  - 结果: 未能生成明确动机，跳过本次循环。")
                 return
 
-            logger.info(f"  - 动机: {motive}")
-
-            # 2. 规划 (Plan)
-            logger.info("  - 主规划器进行规划...")
-            plan_result:PlanResult = await self.main_planner.plan()
+            logger.info(f"  - 新的动机: {motive}")
+            self.world_model.motive = motive
+            # 2. 执行动机 (Execute Motive)
+            #    此方法内部包含完整的 Plan-Act-Observe 循环
+            await self._execute_motive_plan(motive)
             
-            if not plan_result:
-                logger.warning("  - 结果: 主规划器未能生成有效计划。")
-                self.world_model.add_memory(f"我刚刚 {motive}，但没想好要干什么。")
-                return
-            
-            logger.info(f"  - 思考过程: {plan_result.thought}")
-            logger.info(f"  - 计划行动: 调用工具 '{plan_result.tool_name}' 参数: {plan_result.parameters}")
-
-            # 3. 行动 (Act)
-            tool_result = await self.cortex_manager.execute_tool(
-                plan_result.tool_name, 
-                **plan_result.parameters
-            )
-            logger.info(f"  - 工具执行结果: {tool_result}")
-
-            # 4. 反思与记忆 (Reflect & Memorize)
-            logger.info("  - 步骤 4: 存入记忆...")
-            memory_entry = (
-                f"我刚才的动机是“{motive}”。\n"
-                f"我的思考过程是“{plan_result.thought}”。\n"
-                f"我决定并执行了工具“{plan_result.tool_name}”，传入参数是 {plan_result.parameters}。\n"
-                f"执行结果是：“{tool_result}”。"
-            )
-            self.world_model.add_memory(memory_entry)
-            logger.info("  - 记忆已更新。")
+            logger.info(f"--- 动机 '{motive}' 执行完毕 ---")
 
         except asyncio.CancelledError:
             logger.warning("AgentLoop: 当前运行循环任务被中断信号取消。")
@@ -106,7 +127,7 @@ class AgentLoop:
                     return_when=asyncio.FIRST_COMPLETED
                 )
 
-                if AgentLoop.agent_interrupt_event.wait() in done:
+                if interrupt_task in done:
                     logger.info("AgentLoop: 检测到中断信号！取消当前运行循环任务。")
                     current_cycle_task.cancel()
                     await asyncio.gather(current_cycle_task, return_exceptions=True)

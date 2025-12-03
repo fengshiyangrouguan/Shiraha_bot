@@ -77,11 +77,11 @@ class Message(BaseEventData):
                 texts.append(f"[转发消息概述:{seg.data}]")
 
             elif seg.type == "reply":
-                texts.append(f"[回复{seg.data}的消息{self.metadata.get("reply_text", "")}]:")
+                texts.append(f"[回复{seg.data}的消息]:")
 
             elif seg.type == "at":
                 #适配器传回的就是 @ xxx 的文本
-                texts.append(f"{seg.data}: ")
+                texts.append(f"@{seg.data} ")
 
             elif seg.type == "image":
                 try:
@@ -94,7 +94,7 @@ class Message(BaseEventData):
                         prompt=prompt,
                         base64_image_data=seg.data
                     )
-                    texts.append(f"[图片描述: {description}]")
+                    texts.append(f"发了一张图片：[{description}]")
                 except Exception as e:
                     # 如果生成描述失败，使用旧的占位符
                     texts.append(f"[{seg.type}]")
@@ -111,7 +111,7 @@ class Message(BaseEventData):
                         prompt=prompt,
                         base64_image_data=seg.data
                     )
-                    texts.append(f"发了一个表情包：[表情包描述: {description}]")
+                    texts.append(f"发了一个表情包：[{description}]")
                 except Exception as e:
                     # 如果生成描述失败，使用旧的占位符
                     texts.append(f"[{seg.type}]")

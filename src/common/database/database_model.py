@@ -15,6 +15,10 @@ class ConversationInfoDB(SQLModel, table=True):
         default=None,
         sa_column=Column(Text, nullable=True)
     )
+    platform_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
     platform_meta: Optional[Dict[str, Any]] = Field(
         sa_column=Column(JSON),
         default=None 
