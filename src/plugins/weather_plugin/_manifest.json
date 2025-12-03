@@ -1,0 +1,14 @@
+{
+  "manifest_version": 1,
+  "name": "Weather示例插件",
+  "version": "1.0.0",
+  "description": "显示天气",
+  "author": {
+    "name": "zyb"
+  },
+
+  "plugin_info": {
+    "is_built_in": false,
+    "plugin_type": "example"
+  }
+}
