@@ -85,7 +85,7 @@ class Planner:
 
             try:
                 logger.info(f"执行工具 '{tool_name}' 参数: {args}")
-                instance = tool_class()
+                instance = tool_class(self.plugin_manager.tool_to_plugin_map[tool_name].config)
                 plugin_output = await instance.execute(**args)
                 if "error" in plugin_output:
                     msg = f"你调用了 {tool_name} 工具，执行失败：{plugin_output['error']}"

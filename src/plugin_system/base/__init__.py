@@ -6,7 +6,7 @@
 
 from .base_plugin import BasePlugin
 from .base_tool import BaseTool
-from .component_types import (
+from .component_info import (
     ComponentType,
     ActionActivationType,
     ChatMode,

@@ -1,8 +1,5 @@
-# src/plugins/plugin.py
 import random
 from typing import List, Dict, Any, Type, Union, Tuple
-
-# 假设 base_tool.py 在 src/plugin_system/base_tool.py
 from src.plugin_system import (
     BasePlugin,
     BaseTool,
@@ -59,7 +56,7 @@ class WeatherPlugin(BasePlugin):
     """
     plugin_name: str = "weather_plugin"  # 内部标识符
     enable_plugin: bool = True
-    dependencies: List[str] = ['123']  # 插件依赖列表
+    dependencies: List[str] = []  # 插件依赖列表
     python_dependencies: List[str] = []  # Python包依赖列表
     config_file_name: str = "config.toml"  # 配置文件名
 

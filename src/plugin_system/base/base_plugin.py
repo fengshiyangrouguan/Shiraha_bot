@@ -5,7 +5,7 @@ import json
 
 from src.common.logger import get_logger
 from .plugin_info import PluginInfo, PythonDependency
-from .component_types import ToolInfo
+from .component_info import ToolInfo
 from .base_tool import BaseTool
 from .config_types import ConfigField
 from src.plugin_system.utils.manifest_utils import ManifestValidator
@@ -60,9 +60,7 @@ class BasePlugin(ABC):
         self.config: Dict[str, Any] = {}  # 当前插件配置
         self.plugin_dir = plugin_dir  # 插件所在目录
         self.manifest_data: Dict[str, Any] = {}  # 当前实例的 manifest 数据
-
         self.log_prefix = f"[Plugin:{self.plugin_name}]"
-
         # 1. 加载 manifest
         self._load_manifest()
 
@@ -90,7 +88,7 @@ class BasePlugin(ABC):
         self.plugin_description = self.get_manifest_info("description", "")
         self.plugin_author = self._get_author_name()
 
-        # 6. 构造 PluginInfo（供注册中心使用）
+        # 6. 构造 PluginInfo
         self.plugin_info = PluginInfo(
             # 插件基本信息
             name=self.plugin_name,
@@ -98,6 +96,7 @@ class BasePlugin(ABC):
             python_dependencies=self.python_dependencies.copy(),
             config_file=self.config_file_name or "",
             enabled=self.config.get("plugin", {}).get("enabled", self.enable_plugin),  # 如果config无enabled属性，则使用基本信息中定义的
+            components=[info[0] for info in self.get_plugin_components()],
             # manifest 相关信息
             manifest_data=self.manifest_data.copy(),
             display_name=self.display_name,
@@ -115,7 +114,6 @@ class BasePlugin(ABC):
             max_host_version=self.get_manifest_info("host_application.max_version", ""),
             is_built_in=False,
         )
-
         logger.debug(f"{self.log_prefix} 插件基类初始化完成")
 
     # ======== 子类必须实现：返回组件列表 ========
@@ -156,23 +154,17 @@ class BasePlugin(ABC):
         """加载 manifest 文件（强制要求）"""
         if not self.plugin_dir:
             raise ValueError(f"{self.log_prefix} 没有插件目录路径，无法加载 manifest")
-
         manifest_path = os.path.join(self.plugin_dir, self.manifest_file_name)
-
         if not os.path.exists(manifest_path):
             error_msg = f"{self.log_prefix} 缺少必需的 manifest 文件: {manifest_path}"
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
-
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 self.manifest_data = json.load(f)
-
             logger.debug(f"{self.log_prefix} 成功加载 manifest 文件: {manifest_path}")
-
             # 验证 manifest 格式
             self._validate_manifest()
-
         except json.JSONDecodeError as e:
             error_msg = f"{self.log_prefix} manifest 文件格式错误: {e}"
             logger.error(error_msg)
@@ -194,7 +186,6 @@ class BasePlugin(ABC):
         """验证 manifest 文件格式（使用强化的验证器）"""
         if not self.manifest_data:
             raise ValueError(f"{self.log_prefix} manifest 数据为空，验证失败")
-
         validator = ManifestValidator()
         is_valid = validator.validate_manifest(self.manifest_data)
 
@@ -214,23 +205,29 @@ class BasePlugin(ABC):
         """获取 manifest 信息，支持点分割嵌套键，如 'author.name'"""
         if not self.manifest_data:
             return default
-
         keys = key.split(".")
         value: Any = self.manifest_data
-
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
             else:
                 return default
-
         return value
 
     # ======== 配置访问 ========
     def get_config(self, key: str, default: Any = None) -> Any:
-        """获取插件配置值，支持 'section.key' 形式嵌套访问"""
+        """获取插件配置值，支持嵌套键访问
+
+        Args:
+            key: 配置键名，支持嵌套访问如 "section.subsection.key"
+            default: 默认值
+
+        Returns:
+            Any: 配置值或默认值
+        """
+        # 支持嵌套键访问
         keys = key.split(".")
-        current: Any = self.config
+        current = self.config
 
         for k in keys:
             if isinstance(current, dict) and k in current:

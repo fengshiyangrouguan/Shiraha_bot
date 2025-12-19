@@ -6,7 +6,7 @@ from typing import Dict, Type, List, Tuple, Any
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.base.base_tool import BaseTool
 
-from src.plugin_system.base.component_types import (
+from src.plugin_system.base.component_info import (
     ComponentType,
     ComponentInfo,
 )
@@ -26,6 +26,7 @@ class PluginManager:
     """
 
     def __init__(self):
+
         base_dir = Path(__file__).resolve().parent.parent.parent
         self.plugin_root: Path = base_dir / "plugins"
 
@@ -34,7 +35,8 @@ class PluginManager:
 
         # 组件注册表：不同类型分别维护
         self._tools: Dict[str, Type[BaseTool]] = {}
-
+        # 组件到所属插件映射表
+        self.tool_to_plugin_map: Dict[str, BasePlugin] = {}
     # =====主流程=====
     def load_plugins(self):
         print(self.plugin_root)
@@ -96,7 +98,18 @@ class PluginManager:
             self._plugins[plugin.plugin_name] = plugin
             logger.info(f"成功加载插件: {plugin.plugin_name}")
         else:
-            logger.info(f"{plugin.log_prefix} 插件已禁用，不注册组件。")
+            logger.info(f"{plugin.log_prefix} 插件已禁用，不注册插件。")
+
+    def _check_dependencies(self, plugin: BasePlugin) -> bool:
+        """检查插件依赖"""
+        if not plugin.dependencies:
+            return True
+
+        for dep in plugin.dependencies:
+            if not self.get_plugin(dep):
+                logger.error(f"{plugin.log_prefix} 缺少依赖插件: {dep}")
+                return False
+        return True
 
     # =====注册插件的全部组件=====
     def _register_components(self, plugin: BasePlugin):
@@ -112,8 +125,8 @@ class PluginManager:
             # ============ Tool ============
             if ctype is ComponentType.TOOL:
                 self._tools[comp_info.name] = comp_class
+                self.tool_to_plugin_map[comp_info.name] = plugin
                 logger.info(f"  注册 Tool: {comp_info.name}")
-
             else:
                 logger.warning(f"未知组件类型: {ctype}")
 
@@ -122,18 +135,7 @@ class PluginManager:
         return self._tools.get(name)
 
     def get_all_tool_definitions(self) -> List[Dict[str, Any]]:
-        return [tool.get_definition() for tool in self._tools.values()]
-
-    def _check_dependencies(self, plugin: BasePlugin) -> bool:
-        """检查插件依赖"""
-        if not plugin.dependencies:
-            return True
-
-        for dep in plugin.dependencies:
-            if not self.get_plugin(dep):
-                logger.error(f"{plugin.log_prefix} 缺少依赖插件: {dep}")
-                return False
-        return True
+        return [tool.get_tool_definition() for tool in self._tools.values()]
 
     def get_plugin(self, plugin_name: str) -> BasePlugin | None:
         """获取单个插件实例"""

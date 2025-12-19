@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
-
+from .component_info import ComponentInfo
 @dataclass
 class PythonDependency:
     """Python包依赖信息"""
@@ -21,10 +21,6 @@ class PythonDependency:
             return f"{self.install_name}{self.version}"
         return self.install_name
 
-
-class ComponentInfo:
-    """TODO:实现组件信息"""
-    pass
 
 
 @dataclass
