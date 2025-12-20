@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 
 from .chat_stream import QQChatStream
 from src.common.event_model.info_data import ConversationInfo
+from src.common.database.database_manager import DatabaseManager
+from src.system.di.container import container
 
 class QQChatData(BaseModel):
     """
@@ -11,13 +13,14 @@ class QQChatData(BaseModel):
     它封装了与 QQ 聊天功能相关的所有状态。
     """
     streams: Dict[str, QQChatStream] = Field(default_factory=dict)
+    bot_id: Optional[str] = None
 
     def get_or_create_stream(self, conversation_info:ConversationInfo) -> QQChatStream:
         """
         获取一个聊天流，如果不存在则创建并返回。
         """
         if conversation_info.conversation_id not in self.streams:
-            self.streams[conversation_info.conversation_id] = QQChatStream(stream_id=conversation_info.conversation_id, conversation_info=conversation_info)
+            self.streams[conversation_info.conversation_id] = QQChatStream(stream_id=conversation_info.conversation_id, conversation_info=conversation_info, bot_id=self.bot_id)
         return self.streams[conversation_info.conversation_id]
 
     @property

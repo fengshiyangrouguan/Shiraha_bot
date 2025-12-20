@@ -1,7 +1,7 @@
 # src/agent/agent_loop.py
 import asyncio
 import time
-from typing import Optional
+from typing import Optional,List
 
 from src.common.logger import get_logger
 from src.agent.motive.motive_engine import MotiveEngine
@@ -33,6 +33,7 @@ class AgentLoop:
         self._is_running = False
         self._main_task: Optional[asyncio.Task] = None
         self.heartbeat_interval = 30 
+        
 
     async def _execute_motive_plan(self, motive: str):
         """
@@ -40,15 +41,15 @@ class AgentLoop:
         """
         max_steps = 10  # 限制循环次数，防止无限循环
         current_step = 0
-        previous_observation = None # 存储上一步的观察结果 (Observation)
-        
+        previous_observation: List[str] = []
         while current_step < max_steps:
             current_step += 1
             
             logger.info(f"  - 内部循环: 步骤 {current_step}/{max_steps}，动机: '{motive}'")
             
             # 1. 规划 (Plan) - 接收动机和上一步的观察结果
-            plan_result: PlanResult = await self.main_planner.plan(motive, previous_observation)
+            previous_observation_context = "\n".join(previous_observation) 
+            plan_result: PlanResult = await self.main_planner.plan(motive, previous_observation_context)
 
             if plan_result.tool_name == "finish":
                 logger.info(f"  - 规划器 选择停止。总步数: {current_step}")
@@ -62,7 +63,9 @@ class AgentLoop:
 
                 tool_result = await self.cortex_manager.execute_tool(tool_call)
                 logger.info(f"  - 工具执行结果: {tool_result}")
-                previous_observation = f"在上一轮规划行动中，我决定 {plan_result.thought}，结果是: {tool_result}"
+                previous_observation.append(
+                    f"在第 {current_step} 轮规划行动中，我的行动让我了解到: {tool_result}"
+                )
 
             # 3. 反思与记忆
             self._record_step_memory(motive, plan_result, tool_result)

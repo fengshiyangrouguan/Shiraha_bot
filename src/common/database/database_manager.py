@@ -57,7 +57,12 @@ class DatabaseManager:
         async with await self.get_session() as session:
             result = await session.get(model_class, pk)
             return result
-
+        
+    async def get_all(self, query):
+        async with await self.get_session() as session:
+            result = await session.execute(query)
+            return [row[0] for row in result.all()]
+        
     async def shutdown(self):
         """关闭数据库引擎连接。"""
         if self._engine:

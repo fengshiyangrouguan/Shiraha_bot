@@ -37,7 +37,11 @@ def load_cortex_config(cortex_dir: Path, schema_model: Type[BaseModel]) -> BaseM
         validated_config = schema_model.model_validate(config_data)
         return validated_config
     except ValidationError as e:
-        raise ValidationError(f"Cortex 配置文件验证失败，路径: {config_file_path}: {e}")
+        raise ValueError(
+            f"Cortex 配置文件验证失败，路径: {config_file_path}\n{e}"
+        ) from e
     except Exception as e:
-        raise Exception(f"加载 Cortex 配置文件时发生错误，路径: {config_file_path}: {e}")
+        raise Exception(
+            f"Cortex 配置时发生未知错误，路径: {config_file_path}\n{e}"
+        ) from e
 

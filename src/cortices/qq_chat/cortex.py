@@ -20,6 +20,9 @@ from .tools.send_quick_reply import SendQuickReplyTool
 from .tools.view_unread_msg import ViewUnreadMsgTool
 
 
+from src.common.database.database_manager import DatabaseManager
+
+
 class QQChatCortex(BaseCortex):
     """
     QQ 聊天皮层，负责管理与 QQ 平台的所有交互。
@@ -32,8 +35,6 @@ class QQChatCortex(BaseCortex):
         self.event_processor: Optional[QQChatEventProcessor] = None
         self._world_model: Optional[WorldModel] = None
         self._cortex_manager: Optional[CortexManager] = None
-
-        self._event_queue: asyncio.Queue[Event] = asyncio.Queue()
         self._process_events_task: Optional[asyncio.Task] = None
 
 
@@ -52,7 +53,7 @@ class QQChatCortex(BaseCortex):
         self._world_model = world_model
         self._cortex_manager = cortex_manager
 
-        self.event_processor = QQChatEventProcessor(world_model, self._event_queue)
+        self.event_processor = QQChatEventProcessor(world_model,config.bot_id)
         platform_manager: PlatformManager = container.resolve(PlatformManager)
 
         # 1. 设置并启动平台适配器
@@ -72,19 +73,23 @@ class QQChatCortex(BaseCortex):
 
         print(f"QQChatCortex: 启动完成。")
 
+    async def post_event_to_processor(self, event: Event):
+        """将一个事件（通常是出站事件）发送到事件处理器队列中进行持久化和状态更新。"""
+        await self.event_processor.post_event_to_queue(event)
+
     def get_tools(self) -> List[BaseTool]:
         """
         实例化并返回此 Cortex 提供的所有工具。
         """
         if not self._world_model or not self._cortex_manager:
             raise RuntimeError("QQChatCortex尚未完全初始化，无法获取工具。")
-        
+
         return [
             # EnterChatModeTool(
             #     world_model=self._world_model,
             #     cortex_manager=self._cortex_manager, 
             #     adapter_id=self.config.adapter.adapter_id),
-            SendQuickReplyTool(self._world_model,self.adapter),
+            SendQuickReplyTool(self._world_model, self.adapter, self),
             ViewUnreadMsgTool(self._world_model)
         ]
         

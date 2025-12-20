@@ -23,7 +23,6 @@ class ConversationInfoDB(SQLModel, table=True):
         sa_column=Column(JSON),
         default=None 
     )
-
 class UserInfoDB(SQLModel, table=True):
     """Database model for UserInfo."""
     __tablename__ = "user_info"

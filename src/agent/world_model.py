@@ -29,7 +29,8 @@ class WorldModel:
         self.bot_name: str = persona_config.bot_name
         self.bot_identity: str = persona_config.bot_identity
         self.bot_personality: str = persona_config.bot_personality
-        self.bot_interest: str = ','.join(persona_config.bot_interest)
+        self.bot_interest: str = ", ".join(persona_config.bot_interest)
+        self.bot_expression_style: str = persona_config.expression_style
 
         # --- 2. 初始化动态内在状态 ---
         self.motive: str = ""
@@ -144,7 +145,7 @@ class WorldModel:
             "bot_name": self.bot_name,
             "bot_identity": self.bot_identity,
             "bot_personality": self.bot_personality,
-            "bot_interest": ", ".join(self.bot_interest), 
+            "bot_interest": self.bot_interest, 
             "time": time.strftime('%Y年%m月%d日 %H:%M:%S 星期%A'),
             "mood": self.mood,
             "notifications": notification_str,

@@ -43,7 +43,7 @@ class BasePlanner(ABC):
         """
 
         prompt_messages = prompt
-        print(f"planner提示词{prompt_messages}")
+        # print(f"planner提示词{prompt_messages}")
 
         try:
             # 发送给 LLM 的是序列化后的 prompt

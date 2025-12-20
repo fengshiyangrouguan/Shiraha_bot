@@ -9,6 +9,6 @@ class CortexConfigSchema(BaseCortexConfigSchema):
     定义了该 Cortex 所需的所有配置字段及其类型和默认值。
     """
     enable: bool = Field(True, description="是否启用 QQ Chat Cortex。")
-    # 移除 platform 字段，因为具体的平台配置将通过 napcat_adapters 列表提供
-    
+    #TODO: 可能得改成int或str输入都变为str
+    bot_id: str = Field(..., description="机器人在QQ平台上的唯一ID。")    
     adapter: ConfigSchema = Field(..., description="QQ Napcat 平台适配器的配置。")

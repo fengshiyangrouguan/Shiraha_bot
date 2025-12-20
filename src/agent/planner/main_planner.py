@@ -36,19 +36,40 @@ class MainPlanner(BasePlanner):
             "请严格遵循 ReAct (Reason+Act) 的思考模式：\n"
             "1. **思考 (Reasoning)**: 分析当前意图、世界状态和可用工具，阐述你的思考过程和决策依据。\n"
             "2. **行动 (Action)**: 从可用工具列表中选择一个最合适的工具，并给出调用它所需的具体参数。\n"
-            "你的输出必须是一个严格的 JSON 对象，格式如下：\n"
+            f"3. **修正 (Correction)**: 如果上一步的行动结果（Observation）是失败、空结果或明确的警告，必须立即更改策略，不要重复调用。\n"
+            f"## 工具调用的规则：\n"
+            f"1. 工具返回结果有问题时，不要重复调用"
+            f"2. 不要连续重复调用同一个工具"
+            f"3. 当你任务意图已满足，及时停止规划"
+
+            "你的输出必须严格遵守以下规则：\n"
+            "1. 输出必须是一个 JSON 对象。"
+            "2. 不能包含反引号、Markdown、注释、额外文字、说明或自然语言。\n"
+            "3. JSON 格式：\n"
             f"```json\n"
-            "{\"thought\": \"你的思考过程...\", \"action\": {\"tool_name\": \"工具名称\", \"parameters\": {\"参数名\": \"参数值\"}}}"
-            f"```\n"
-            "如果：1.没有合适的工具，2.意图已完成，3.你认为当前意图不需要任何操作时，请在action中返回 `{\"tool_name\": \"finish\", \"parameters\": {}}`。"
-            "理由(thought)要求是一段精简的平文本，不要分点。"
+            "{\n"
+            "   \"thought\": \"一句完整的平文本，不分点，不换行，不解释工具作用，只解释你为何选择该工具。\", \n"
+            "   \"action\": { \n"
+            "       \"tool_name\": \"工具名称（字符串）\", \n"
+            "       \"parameters\": {...} \n"
+            "    }\n"
+            "} \n"
+            "```\n"
+            "4. action 只能包含一个工具。\n"
+            "5. 如果你认为当前意图已经被满足，或者没有工具适合执行，则返回：\n"
+            "{\n"
+            "   \"thought\": \"结束规划的原因\", \n"
+            "   \"action\": {\"tool_name\": \"finish\", \"parameters\": {}} \n"
+            "}\n"
         )
         
         user_prompt = (
             f"## 1. 世界状态与近期活动\n"
             f"**当前时间**: {context['time']}\n"          
+            f"**未读消息**:{context['notifications']}\n"
             f"**重要通知**: {context['alert']}\n"  
             f"**近期活动总结**:\n{context['action_summary']}\n\n"
+            f"**上一步的活动内容**：\n"
             f"{previous_observation}\n\n"
             f"## 2. 可用的工具列表: \n"
             "```json\n"
@@ -63,6 +84,7 @@ class MainPlanner(BasePlanner):
         builder.add_user_message(user_prompt)
         
         prompt = builder.get_message_dict()
+        print(prompt)
         plan_result = await self.send_to_LLM(prompt)
         return plan_result
         

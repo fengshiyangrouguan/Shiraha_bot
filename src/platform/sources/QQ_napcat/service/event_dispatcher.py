@@ -27,11 +27,44 @@ class NapcatEventDispatcher:
     def __init__(self, adapter:"QQNapcatAdapter"):
         self.adapter = adapter
 
+    def _is_filtered(self, raw_event: Dict[str, Any]) -> bool:
+        """
+        判断当前原始事件是否应该被过滤掉
+        返回 True 表示“要过滤（抛弃）”，False 表示“放行”
+        """
+        chat_config = self.adapter.config.chat
+        group_id = raw_event.get("group_id")
+
+        # --- 1. 群组过滤逻辑 ---
+        if group_id is not None:
+            is_in_list = int(group_id) in chat_config.group_list
+            
+            if chat_config.group_list_type == "whitelist":
+                return not is_in_list  # 不在白名单里 -> 过滤
+            else:
+                return is_in_list      # 在黑名单里 -> 过滤
+
+        # --- 2. 私聊过滤逻辑 (如果没有 group_id，则视为私聊) ---
+        user_id = raw_event.get("target_id") 
+        if user_id is not None:
+            is_in_list = int(user_id) in chat_config.private_list
+            
+            if chat_config.private_list_type == "whitelist":
+                return not is_in_list  # 不在白名单里 -> 过滤
+            else:
+                return is_in_list      # 在黑名单里 -> 过滤
+
+        # 如果既没有 group_id 也没有 target_id（非消息事件），则不过滤
+        return True
+
     async def dispatch(self, raw_event: Dict[str, Any]):
         """
         分发 Napcat 原始事件
         """
-
+        is_filted = self._is_filtered(raw_event)
+        if is_filted:
+            return
+        
         post_type = raw_event.get("post_type")
 
         # -------------------------------
