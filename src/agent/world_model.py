@@ -49,6 +49,8 @@ class WorldModel:
         self.cortex_data: Dict[str, BaseModel] = {} 
 
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
+        self.short_term_memory.append(f"[{time.strftime('%H:%M:%S')}] 你刚刚睡醒，感觉有点迷糊，需要一会儿才能完全进入状态。")
+
         self.long_term_memory = None # 长期记忆占位符
 
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
@@ -134,13 +136,14 @@ class WorldModel:
         if self.alerts:
             alert_str = "注意！你收到了以下紧急警报：\n- " + "\n- ".join(self.alerts)
         
-        # 清空已处理的刺激物
-        self.notifications.clear()
-        self.alerts.clear()
+        # # 清空已处理的刺激物
+        # self.notifications.clear()
+        # self.alerts.clear()
 
         # --- 格式化近期活动 ---
-        action_summary_str = "\n".join(self.short_term_memory) if self.short_term_memory else "你最近没有活动。"
-
+        action_summary_str = "\n".join(self.short_term_memory) 
+        # action_summary_str = "\n".join(self.short_term_memory) if self.short_term_memory else "你刚刚睡醒，思维缓存正在加载中，感觉有点迷糊，需要一会儿才能完全进入状态。"
+        
         context = {
             "bot_name": self.bot_name,
             "bot_identity": self.bot_identity,

@@ -31,7 +31,6 @@ class MainSystem:
         self.world_model: Optional[WorldModel] = None
         self.cortex_manager: Optional[CortexManager] = None
         self.platform_manager: Optional[PlatformManager] = None # 新增：PlatformManager 实例
-        # self.impetus_descriptions: List[str] = [] # 移除：MotiveEngine 直接接收
 
     async def initialize(self):
         """初始化主系统"""

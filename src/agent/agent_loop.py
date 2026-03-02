@@ -37,42 +37,29 @@ class AgentLoop:
 
     async def _execute_motive_plan(self, motive: str):
         """
-        在一个给定的动机下，执行 Thought-Action-Observation 循环。
+        在一个给定的动机下，执行一次 Thought-Action-Observation。
         """
-        max_steps = 10  # 限制循环次数，防止无限循环
-        current_step = 0
-        previous_observation: List[str] = []
-        while current_step < max_steps:
-            current_step += 1
+        logger.info(f"  - 执行单步规划，动机: '{motive}'")
+        
+        # 1. 规划 (Plan) - 接收动机，不再需要 previous_observation
+        # 在新的模式下，上一步的观察结果会通过 WorldModel 的整体上下文提供给 Planner
+        plan_result: PlanResult = await self.main_planner.plan(motive)
+
+        if plan_result.tool_name == "finish":
+            logger.info(f"  - 规划器选择不采取行动 (finish)。")
+            plan_result.thought = "感觉没什么要干的。"
+            tool_result = "你发呆了一会儿。"
+        else:
+            logger.info(f"  - 思考过程: {plan_result.thought}")
+            logger.info(f"  - 计划行动: 调用工具 '{plan_result.tool_name}' 参数: {plan_result.parameters}")
             
-            logger.info(f"  - 内部循环: 步骤 {current_step}/{max_steps}，动机: '{motive}'")
-            
-            # 1. 规划 (Plan) - 接收动机和上一步的观察结果
-            previous_observation_context = "\n".join(previous_observation) 
-            plan_result: PlanResult = await self.main_planner.plan(motive, previous_observation_context)
+            tool_call = ToolCall(tool_name=plan_result.tool_name, parameters=plan_result.parameters)
 
-            if plan_result.tool_name == "finish":
-                logger.info(f"  - 规划器 选择停止。总步数: {current_step}")
-                break # 退出循环
+            tool_result = await self.cortex_manager.execute_tool(tool_call)
+            logger.info(f"  - 工具执行结果: {tool_result}")
 
-            else:
-                logger.info(f"  - 思考过程: {plan_result.thought}")
-                logger.info(f"  - 计划行动: 调用工具 '{plan_result.tool_name}' 参数: {plan_result.parameters}")
-                
-                tool_call = ToolCall(tool_name=plan_result.tool_name, parameters=plan_result.parameters)
-
-                tool_result = await self.cortex_manager.execute_tool(tool_call)
-                logger.info(f"  - 工具执行结果: {tool_result}")
-                previous_observation.append(
-                    f"在第 {current_step} 轮规划行动中，我的行动让我了解到: {tool_result}"
-                )
-
-            # 3. 反思与记忆
-            self._record_step_memory(motive, plan_result, tool_result)
-            
-        if current_step >= max_steps:
-            logger.warning(f"  - 达到最大执行步数 {max_steps}，强制退出循环。")
-            self.world_model.add_memory(f"对于动机“{motive}”，我似乎陷入了困境，执行了 {max_steps} 步后仍未完成。")
+        # 2. 记忆 (Memorize) - 将此步骤的结果记录到世界模型
+        self._record_step_memory(motive, plan_result, tool_result)
 
     def _record_step_memory(self, motive: str, plan: PlanResult, tool_result: str):
         """记录单步的记忆"""
@@ -91,8 +78,8 @@ class AgentLoop:
 
         try:
             # 1. 感知 (Perceive) & 动机 (Motive)
-            impetus_descriptions = self.cortex_manager.get_collected_impetus_descriptions()
-            motive = await self.motive_engine.generate_motive(impetus_descriptions)
+            capability_descriptions = self.cortex_manager.get_collected_capability_descriptions()
+            motive = await self.motive_engine.generate_motive(capability_descriptions)
             
             if not motive or "无" in motive:
                 logger.info(f"  - 结果: 未能生成明确动机，跳过本次循环。")

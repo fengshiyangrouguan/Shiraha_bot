@@ -27,14 +27,14 @@ class CortexManager:
     _instance = None
     _tools: Dict[str, BaseTool]
     _cortices: Dict[str, BaseCortex]
-    _collected_impetus_descriptions: List[str]
+    _collected_capability_descriptions: List[str]
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(CortexManager, cls).__new__(cls)
             cls._instance._tools = {}
             cls._instance._cortices = {}
-            cls._instance._collected_impetus_descriptions = []
+            cls._instance._collected_capability_descriptions = []
         return cls._instance
 
 
@@ -76,9 +76,12 @@ class CortexManager:
                 
                 module_path, class_name = main_class_path.rsplit('.', 1)
 
-                impetus_data = manifest.get("impetus", {})
-                impetus_descriptions = impetus_data.get("impetus_description", [])
-                self._collected_impetus_descriptions.extend(impetus_descriptions)
+                capability_data = manifest.get("capability", {})
+                capability_name = capability_data.get("name", cortex_name)
+                self._collected_capability_descriptions.extend(capability_name+":")
+                capability_descriptions = capability_data.get("capability_description", [])
+                self._collected_capability_descriptions.extend(capability_descriptions)
+                self._collected_capability_descriptions.extend(["\n"]) # 添加分隔符，便于后续构建 Prompt
 
                 validated_config = self._load_and_validate_config(cortex_name, cortex_dir)
                 if validated_config is None or (hasattr(validated_config, 'enable') and not validated_config.enable):
@@ -175,9 +178,28 @@ class CortexManager:
                 schemas.append(tool.get_schema())
         return schemas
     
-    def get_collected_impetus_descriptions(self) -> List[str]:
+    def get_collected_capability_descriptions(self) -> List[str]:
         """获取所有已加载 Cortex 的内在驱动力描述列表。"""
-        return self._collected_impetus_descriptions
+        return self._collected_capability_descriptions
+
+    async def call_tool_by_name(self, tool_name: str, **kwargs) -> Any:
+        """
+        直接通过名称和参数调用一个已注册的工具。
+        主要用于工具内部调用其他工具。
+        """
+        if tool_name not in self._tools:
+            error_msg = f"错误：尝试调用一个未注册的工具 '{tool_name}'。"
+            logger.error(error_msg)
+            return error_msg
+        
+        tool = self._tools[tool_name]
+
+        try:
+            # 直接异步执行工具
+            return await tool.execute(**kwargs)
+        except Exception as e:
+            logger.error(f"从内部调用执行工具 '{tool_name}' 时出错: {e}", exc_info=True)
+            return f"执行工具 '{tool_name}' 时出错: {e}"
 
     async def execute_tool(self, tool_call: ToolCall) -> Any:
         """根据 ToolCall 对象执行相应的工具。"""

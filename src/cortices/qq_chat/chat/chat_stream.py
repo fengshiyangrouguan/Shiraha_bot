@@ -126,7 +126,8 @@ class QQChatStream(BaseModel):
                 self.llm_context = self.llm_context[-MAX_LLM_CONTEXT_SIZE:]
             
             # 更新未读计数
-            self.unread_count += 1
+            if "self_message" not in event.tags:
+                self.unread_count += 1
             
     def mark_as_read(self):
         """

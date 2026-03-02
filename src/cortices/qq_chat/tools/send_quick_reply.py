@@ -12,12 +12,15 @@ from src.cortices.qq_chat.chat.chat_stream import QQChatStream
 from src.common.event_model.event import Event
 from src.common.event_model.event_data import Message, MessageSegment
 from src.common.event_model.info_data import UserInfo
+from src.common.event_model.info_data import ConversationInfo
+from src.common.database.database_model import ConversationInfoDB
 from src.llm_api.dto import LLMMessageBuilder
-from src.system.di.container import container
 from src.llm_api.factory import LLMRequestFactory
+from src.common.database.database_manager import DatabaseManager
 
 if TYPE_CHECKING:
     from src.cortices.qq_chat.cortex import QQChatCortex
+    from src.cortices.manager import CortexManager
 
 
 class SendQuickReplyTool(BaseTool):
@@ -26,14 +29,17 @@ class SendQuickReplyTool(BaseTool):
     适用于不需要深入对话的场景。
     
     """
-    def __init__(self, world_model: WorldModel, adapter: QQNapcatAdapter, cortex: "QQChatCortex"):
+    def __init__(self, world_model: WorldModel, adapter: QQNapcatAdapter, cortex: "QQChatCortex", cortex_manager: "CortexManager", llm_request_factory: "LLMRequestFactory",database_manager: "DatabaseManager"):
+        super().__init__(cortex_manager)
         self._world_model = world_model
         self.adapter = adapter
         self.cortex = cortex
+        self.llm_request_factory = llm_request_factory
+        self.database_manager = database_manager
 
     @property
     def scope(self) -> str:
-        return "main"
+        return "qq_app"
 
     @property
     def metadata(self) -> Dict[str, Any]:
@@ -41,9 +47,9 @@ class SendQuickReplyTool(BaseTool):
             "name": "send_quick_qq_reply",
             "description": "向指定的QQ聊天对象（用户或群组）发送一条简单的消息。适用于不想或不需要深入聊天的场景。简单回应一下，回复的平淡一些，简短一些，不要描述动作，尽量少使用标点，一条回复可分几次发送，",
             "parameters": {
-                "conversation_name": {
+                "conversation_id": {
                     "type": "string",
-                    "description": "目标聊天（私聊或群组）的名称。"
+                    "description": "目标聊天（私聊或群组）的 ID。"
                 },
                 "intent":{
                     "type": "string",
@@ -59,25 +65,11 @@ class SendQuickReplyTool(BaseTool):
                     }
                 },
             },
-            "required_parameters": ["conversation_name", "intent", "style"]
+            "required": ["conversation_id", "intent", "style"]
         }
     
-    async def _find_conversation_id(self, name: str) -> Optional[str]:
-        """
-        通过会话名称查找 conversation_id。
-        来自 world_model 的内存（qq_chat_data）。
-        """
-        qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
-        if not qq_chat_data:
-            return None
-
-        for cid, stream in qq_chat_data.streams.items():
-            if stream.conversation_info.conversation_name == name:
-                return cid
-
-        return None
     
-    def _build_quick_reply_prompt(self, chat_stream: QQChatStream, intent: str, style: Dict[str, Any], history:str):
+    def _build_quick_reply_prompt(self, conversation_info: ConversationInfo, intent: str, style: Dict[str, Any], history:str):
         """
         构造用于轻量级回复生成的 Prompt。
         """
@@ -86,10 +78,11 @@ class SendQuickReplyTool(BaseTool):
         interest = self._world_model.bot_interest
         mood = self._world_model.mood
         expression_style = self._world_model.bot_expression_style
-        if chat_stream.conversation_info.conversation_type == "group":
-          chat_target = f"你正在群聊{chat_stream.conversation_info.conversation_name}中与群友聊天。"
+        if conversation_info.conversation_type == "group":
+            chat_target = f"你正在群聊中与群友聊天。"
+            # chat_target = f"你正在群聊{chat_stream.conversation_info.conversation_name}中与群友聊天。"
         else:
-          chat_target = f"你正在与用户{chat_stream.conversation_info.conversation_name}进行私聊。"
+            chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
         system_prompt = (
             "你是一个用于 QQ 聊天的『轻量聊天回复器』，负责生成自然、口语化、轻量的回应。\n"
@@ -144,29 +137,43 @@ class SendQuickReplyTool(BaseTool):
         return prompt
 
 
-    async def execute(self, conversation_name: str, intent: str, style: Dict[str, Any]) -> str:
+    async def execute(self, conversation_id: str, intent: str, style: Dict[str, Any]) -> str:
         """
         执行发送快速回复的逻辑。
         """
         try:
             # 1. 从 WorldModel 获取上下文信息
-            conversation_id = await self._find_conversation_id(conversation_name)
-            if not conversation_id:
-                return f"未找到名为 '{conversation_name}' 的会话，无法发送消息。"
-            
             qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
-            chat_stream = qq_chat_data.streams[conversation_id]
-            recent_messages = chat_stream.build_chat_history_for_llm()
-            conversation_info = chat_stream.conversation_info
+            chat_stream = None
+            if qq_chat_data and conversation_id in qq_chat_data.streams:
+                chat_stream = qq_chat_data.streams[conversation_id]
+                recent_messages = chat_stream.build_chat_history_for_llm()
+                conversation_info = chat_stream.conversation_info
+            else:
+                # 2. 如果内存中没有（可能刚初始化或流已断开），尝试从数据库查找    
+                # 兼容性处理：如果传入的是 group_123 这种格式，需要拆分出原始 ID
+                db_pk = conversation_id.split('_')[-1] if '_' in conversation_id else conversation_id
+                conv_db:ConversationInfoDB = await self.database_manager.get(ConversationInfoDB, db_pk)
+                conversation_info = ConversationInfo(
+                    conversation_id=conversation_id,
+                    conversation_type=conv_db.conversation_type if conv_db else "private",
+                    conversation_name=conv_db.conversation_name if conv_db else "未知对象"
+                )
+                recent_messages = "无最近聊天记录"
+                
+                if not conv_db:
+                    return f"错误：找不到会话 {conversation_id} 的任何记录（内存及数据库均无）。"
+
+        
             # 3. 构造用于 reply 的 prompt
             prompt = self._build_quick_reply_prompt(
-                chat_stream=chat_stream,
+                conversation_info=conversation_info,
                 intent=intent,
                 style=style,
                 history=recent_messages
             )
 
-            llm_factory = container.resolve(LLMRequestFactory)
+            llm_factory = self.llm_request_factory
             llm_request = llm_factory.get_request("replyer")
             content, model_name = await llm_request.execute(
                 prompt=json.dumps(prompt)
@@ -178,6 +185,7 @@ class SendQuickReplyTool(BaseTool):
                     raise ValueError("segments 不是列表")
             except Exception:
                 # fallback：如果模型没按 JSON 返回，就把整段内容当成一句话
+                #TODO:去掉该临时逻辑
                 segments = [content.strip()]
 
             # 若没有内容，不发送

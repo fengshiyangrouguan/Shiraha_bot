@@ -1,12 +1,20 @@
 # src/cortices/tools_base.py
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Coroutine, Callable
+from typing import Dict, Any, Coroutine, Callable, TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from src.cortices.manager import CortexManager
 
 class BaseTool(ABC):
     """
     工具的抽象基类。
     每个工具都是一个包含元数据和执行逻辑的可调用对象。
     """
+    cortex_manager: Optional[CortexManager]
+
+    def __init__(self, cortex_manager: Optional[CortexManager] = None):
+        self.cortex_manager = cortex_manager
 
     @property
     @abstractmethod
@@ -51,7 +59,7 @@ class BaseTool(ABC):
                 "parameters": {
                     "type": "object",
                     "properties":meta["parameters"],
-                    "required":meta["required_parameters"]
+                    "required":meta["required"]
                 }
             }
         }

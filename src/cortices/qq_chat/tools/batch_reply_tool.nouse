@@ -1,0 +1,121 @@
+import json
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+
+from sqlmodel import select
+
+from src.cortices.tools_base import BaseTool
+from src.agent.world_model import WorldModel
+from src.cortices.qq_chat.chat.qq_chat_data import QQChatData
+from src.common.database.database_manager import DatabaseManager
+from src.common.database.database_model import EventDB
+from src.llm_api.factory import LLMFactory
+
+if TYPE_CHECKING:
+    from src.cortices.manager import CortexManager
+
+class BatchReplyTool(BaseTool):
+    """
+    该工具用于执行批量快速回复任务。
+    它接收一个目标列表，为每个目标会话获取未读消息，生成简洁回复并发送。
+    这是一个内部执行工具，不应由主规划器直接调用。
+    """
+
+    def __init__(self, world_model: WorldModel, cortex_manager: "CortexManager", database_manager: "DatabaseManager"):
+        super().__init__(cortex_manager)
+        self._world_model = world_model
+        self.database_manager = database_manager
+        self.llm_client = LLMFactory.create_llm_client()
+
+    @property
+    def scope(self) -> str:
+        return "qq_app_internal"
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        return {
+            "name": "batch_reply",
+            "description": "接收一个包含多个聊天任务的列表，并为每个任务自动生成和发送一条简洁的回复。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "stream_id": {"type": "string"},
+                                "task_summary": {"type": "string"}
+                            },
+                            "required": ["stream_id", "task_summary"]
+                        },
+                        "description": "需要批量回复的目标列表"
+                    }
+                },
+                "required": ["targets"]
+            }
+        }
+
+    async def execute(self, targets: List[Dict[str, str]]) -> str:
+        """执行批量快速回复"""
+        qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
+        if not qq_chat_data:
+            return "批量回复失败：QQ未联网。"
+
+        if not targets:
+            return "批量回复任务列表为空。"
+
+        completed_tasks = []
+        for target in targets:
+            stream_id = target.get("stream_id")
+            task_summary = target.get("task_summary")
+            chat_stream = qq_chat_data.streams.get(stream_id)
+
+            if not stream_id or not task_summary or not chat_stream or chat_stream.unread_count == 0:
+                continue
+
+            try:
+                # 1. 获取未读消息
+                query = (
+                    select(EventDB)
+                    .where(EventDB.conversation_id == chat_stream.conversation_info.conversation_id)
+                    .order_by(EventDB.time.desc())
+                    .limit(chat_stream.unread_count)
+                )
+                messages_desc: List[EventDB] = await self.database_manager.get_all(query)
+                history = "
+".join([f"{msg.user_nickname}: {msg.event_content}" for msg in reversed(messages_desc)])
+
+                # 2. 生成回复
+                reply_prompt = f"根据以下聊天记录，并围绕这个目标生成一句简洁的回复：'{task_summary}'
+
+聊天记录:
+{history}
+
+你的回复:"
+                reply_content = await self.llm_client.request(reply_prompt)
+                
+                if not reply_content:
+                    continue
+
+                # 3. 发送回复 (假设存在一个scope为internal的send_quick_reply工具)
+                await self.cortex_manager.call_tool_by_name(
+                    tool_name="send_quick_reply",
+                    parameters={"stream_id": stream_id, "content": reply_content},
+                    scope="qq_chat_internal" # 明确指定调用内部工具
+                )
+                
+                # 4. 标记为已读并保存
+                chat_stream.mark_as_read()
+                completed_tasks.append(chat_stream.conversation_info.conversation_name)
+
+            except Exception as e:
+                # 记录错误，但继续处理下一个目标
+                print(f"处理 {stream_id} 时出错: {e}") # 应该使用logger
+                continue
+
+        await self._world_model.save_cortex_data("qq_chat_data", qq_chat_data)
+        
+        if completed_tasks:
+            return f"完成了对 {', '.join(completed_tasks)} 的批量快速回复。"
+        else:
+            return "未能成功执行任何批量回复任务。"

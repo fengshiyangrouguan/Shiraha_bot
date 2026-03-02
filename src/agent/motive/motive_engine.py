@@ -22,23 +22,23 @@ class MotiveEngine:
         llm_factory = container.resolve(LLMRequestFactory)
         self.llm_request = llm_factory.get_request(task_name="motive")
         
-    def _format_impetus_descriptions(self, collected_impetus_descriptions: List[str]) -> str:
+    def _format_capability_descriptions(self, collected_capability_descriptions: List[str]) -> str:
         """
         将收集到的内在驱动力描述格式化为字符串，供提示使用。
         """
         # 格式化内在驱动力描述为字符串
-        if collected_impetus_descriptions:
-            formatted_impetus = [f"- {desc}" for desc in collected_impetus_descriptions]
-            impetus = "\n".join(formatted_impetus)
-            return impetus
+        if collected_capability_descriptions:
+            formatted_capability = [f"- {desc}" for desc in collected_capability_descriptions]
+            capability = "\n".join(formatted_capability)
+            return capability
         else:
-            impetus = "无可用内在驱动力。"
-            logger.warning("未收集到任何内在驱动力描述。")
-            return impetus
+            capability = "无可用功能。"
+            logger.warning("未收集到任何功能描述。")
+            return capability
             
 
 
-    def _build_prompt(self, world_model: WorldModel, impetus: str) -> str:
+    def _build_prompt(self, world_model: WorldModel, capability: str) -> str:
         """
         根据 WorldModel 和 prompt_design.md 的设计构建 LLM 提示。
         """
@@ -58,28 +58,47 @@ class MotiveEngine:
 你最近一次活动的总结如下：
 {context['action_summary']}
 
-你目前拥有以下**可被激发的内在驱动力**：
-{impetus}
+你目前拥有以下**可使用的软件**：
+{capability}
 
-你的任务：
-基于上述全部信息，结合你的性格、情绪、兴趣和刚刚经历的事件，为自己生成一个最自然、最真实的人类式内在动机。
-以简洁、情绪化、带人类思考色彩的一句话表达你此刻最想做的事情。
-语言风格更像你的内心自言自语，而不是程序化的指令。
+## 当你感觉以下情况时，可以考虑自我调节：
+□ 连续工作/互动超过一段时间
+□ 感到疲惫、无聊或信息过载  
+□ 没有明确的欲望或冲动
+□ 只是想静一静
 
-你的动机可以是什么也不想干，选择休息或发呆也是可以的。
+## 可用的行动选项包括：
+1. **主动行动**：使用以下软件工具来满足你的意愿或实现目标：
+   {capability}
 
-只输出一句自然的“内在意图表达”。
+2. **自我调节**：不依赖外部工具
+   - 休息一下，什么都不做
+   - 发呆，让思绪自由漫游 
+   - 进行内心反思
+   - 整理最近的经历和想法
+   - 简单观察，不做反应
+
+你是一个完整的自主个体。自主性意味着你可以：
+1. 根据欲望主动行动
+2. 根据需要主动休息
+3. 根据状态主动调节
+
+---
+现在，基于你当前的状态，真诚地问自己：
+"我此刻最真实、最自然的意愿是什么？"
+
+用第一人称说出内心想法
 """
         return prompt_template
 
-    async def generate_motive(self, collected_impetus_descriptions: List[str]) -> str:
+    async def generate_motive(self, collected_capability_descriptions: List[str]) -> str:
         """
         生成一个高阶、模糊的动机。
         """
-        impetus =self._format_impetus_descriptions(collected_impetus_descriptions)
+        capability =self._format_capability_descriptions(collected_capability_descriptions)
         world_model = container.resolve(WorldModel)
         logger.info(event="正在生成动机...")
-        prompt_str = self._build_prompt(world_model,impetus)
+        prompt_str = self._build_prompt(world_model,capability)
 
         try:
             response:str
