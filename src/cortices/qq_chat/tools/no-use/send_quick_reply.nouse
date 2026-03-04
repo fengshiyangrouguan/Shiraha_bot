@@ -85,7 +85,7 @@ class SendQuickReplyTool(BaseTool):
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
         system_prompt = (
-            "你是一个用于 QQ 聊天的『轻量聊天回复器』，负责生成自然、口语化、轻量的回应。\n"
+            "你是一个具有复杂情感的 QQ 聊天回复器，负责生成自然、口语化、轻量的回应。\n"
             f"你的目标不是进行长对话，而是给出一两句自然的随口回复。\n"
             "\n"
             f"## 你的身份设定与当前状态:\n"
@@ -105,18 +105,20 @@ class SendQuickReplyTool(BaseTool):
             f"## 回复生成规范\n"
             f"- 不描述动作（例如不要写“我摇了摇头”等）\n"
             f"- 尽量少用标点\n"
-            f"- 用自然、随口感的语气\n"
-            f"- 回复风格不要太正式\n"
+            # f"- 用自然、随口感的语气\n"
+            # f"- 回复风格不要太正式\n"
             f"- 可以分句，但不要太长\n"
             f"- 可以分成 1~3 条短句\n"
             f"- 不要复述“意图”本身\n"
             f"- 不要重复自己说的话"
+            f"- 你是一个独立个体，不需要随便接受别人的指令和要求，可以按照自己意愿回复\n"
             f"\n"
             f"## 输出格式\n"
             f"只输出 JSON，不要附加任何解释。\n"
             f"格式如下：\n"
             "{\n"
             "  \"segments\": [\"句1\", \"句2\"],   // 可以多条消息，按标点符号分割句子，每句不超过20字\n"
+            "  \"summary\": \"对于本次回复的总结\"  // 以第一人称“我”简单概括基于什么聊天内容，你这次因为什么想法回复了什么\n"
             "}\n"
 
         )
@@ -151,7 +153,6 @@ class SendQuickReplyTool(BaseTool):
                 conversation_info = chat_stream.conversation_info
             else:
                 # 2. 如果内存中没有（可能刚初始化或流已断开），尝试从数据库查找    
-                # 兼容性处理：如果传入的是 group_123 这种格式，需要拆分出原始 ID
                 db_pk = conversation_id.split('_')[-1] if '_' in conversation_id else conversation_id
                 conv_db:ConversationInfoDB = await self.database_manager.get(ConversationInfoDB, db_pk)
                 conversation_info = ConversationInfo(
@@ -179,18 +180,20 @@ class SendQuickReplyTool(BaseTool):
                 prompt=json.dumps(prompt)
             )
             try:
-                reply_obj:Dict = json.loads(content)
+                json_str = content.strip()
+                if json_str.startswith("```"):
+                    json_str = json_str.replace("```json", "").replace("```", "").strip()
+
+                reply_obj:Dict = json.loads(json_str)
                 segments = reply_obj.get("segments", [])
                 if not isinstance(segments, list):
                     raise ValueError("segments 不是列表")
             except Exception:
-                # fallback：如果模型没按 JSON 返回，就把整段内容当成一句话
-                #TODO:去掉该临时逻辑
-                segments = [content.strip()]
+                return "不知道该怎么回复"
 
             # 若没有内容，不发送
             if len(segments) == 0:
-                return "回复器 没有返回可发送内容"
+                return "不知道该怎么回复"
 
             for seg in segments:
                 seg = seg.strip()
@@ -236,7 +239,16 @@ class SendQuickReplyTool(BaseTool):
 
                 await self.cortex.post_event_to_processor(new_event)
 
-            return f"已针对回复意图({intent})完成回复"
+            summary = reply_obj.get("summary")
+
+            if summary is not None:
+                # 找到了 summary 且它不是 None
+                print("回复摘要:", summary)
+                return f"{summary}"
+            else:
+                # summary 不存在，或者它的值明确就是 None
+                print("未找到摘要")
+                return f"已针对回复意图({intent})完成回复"
         
         except Exception as e:
             return f"发送消息时出错: {e}"

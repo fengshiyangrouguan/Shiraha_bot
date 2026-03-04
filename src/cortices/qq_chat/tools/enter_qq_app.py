@@ -103,19 +103,32 @@ class EnterQQAppTool(BaseTool):
         # 模仿 main_planner, 获取可用工具
         context = self.world_model.get_context_for_motive()
         available_tools = self.cortex_manager.get_tool_schemas(scope="qq_app")
+        short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self.world_model.short_term_memory)
 
         prompt = f"""
 你叫 {context['bot_name']}。
 你是 {context['bot_identity']}。
-你的性格是 {context['bot_personality']}，你的兴趣包括 {context['bot_interest']}。
+你的性格是 {context['bot_personality']}，
+你的兴趣包括 {context['bot_interest']}。
 
 现在是 {context['time']}。
 此刻你的心理状态是：{context['mood']}。
+
+你的近期活动：
+{short_term_memory}
         
 现在你正在qq软件中浏览会话列表，正在规划下一步行动。
 你当前的总意图是："{objective}"
 
 {context_str}
+
+## **社交规范注意**
+**禁止强行切入**：不要因为对方聊到了你的【兴趣爱好】就生硬地发起话题或过度热情的讨论该关键词。
+**社交克制**：不要为了展示你的“兴趣爱好”而生硬地开启话题。只有当当前的聊天内容确实与你高度相关，或者有人明确在与你交流时，才进行自然的回应。
+**自然流露**：兴趣应该是你性格的底色，而不是你说话的模板。只有在氛围合适时才轻量提及，不要像个复读兴趣标签的机器。
+**保持随性**：你没有义务回应每一句未读消息。如果话题不投机或不感兴趣，你可以决定旁观不回复，或者也可以按照你的性格认知下的社交礼仪去决定怎么做。
+**拒绝指令感**：不要表现得像是被‘回复意图’锁死的傀儡，如果意图让你显得太生硬，请用你自己的性格去化解它。
+
 
 ## 决策规则
 根据你的意图和上面的会话列表，从以下选项中选择一个最合适的行动，并严格按照JSON格式输出。
@@ -190,7 +203,7 @@ class EnterQQAppTool(BaseTool):
                 #         chat_stream.mark_as_read()
                 #         await self.world_model.save_cortex_data("qq_chat_data", qq_chat_data)
 
-                return f"已在QQ应用内执行 '{tool_name}'，结果: {result}"
+                return f"{result}"
             except Exception as e:
                 return f"在执行 '{tool_name}' 时出错: {e}"
 

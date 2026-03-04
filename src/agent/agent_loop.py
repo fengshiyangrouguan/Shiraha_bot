@@ -29,7 +29,7 @@ class AgentLoop:
         self.main_planner = MainPlanner()
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
         
-        self.world_model = WorldModel()
+        self.world_model:WorldModel = container.resolve(WorldModel)
         self._is_running = False
         self._main_task: Optional[asyncio.Task] = None
         self.heartbeat_interval = 30 
@@ -64,8 +64,7 @@ class AgentLoop:
     def _record_step_memory(self, motive: str, plan: PlanResult, tool_result: str):
         """记录单步的记忆"""
         memory_entry = (
-            f"我的规划：{plan.thought}。\n"
-            f"执行结果是: {tool_result}"
+            f"{tool_result}"
         )
         self.world_model.add_memory(memory_entry)
         logger.info("  - 单步记忆已更新。")

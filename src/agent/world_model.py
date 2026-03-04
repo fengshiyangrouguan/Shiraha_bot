@@ -17,7 +17,7 @@ class WorldModel:
     3. 动态外部感知 (External Perception: stimuli)
     4. 记忆 (Memory)
     """
-    def __init__(self, short_term_memory_max_len: int = 12):
+    def __init__(self, short_term_memory_max_len: int = 5):
         print("WorldModel: 初始化...")
         
         # --- 1. 加载静态身份 ---
@@ -49,7 +49,8 @@ class WorldModel:
         self.cortex_data: Dict[str, BaseModel] = {} 
 
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
-        self.short_term_memory.append(f"[{time.strftime('%H:%M:%S')}] 你刚刚睡醒，感觉有点迷糊，需要一会儿才能完全进入状态。")
+        # TODO: 以后来一个随机的初始动作
+        # self.short_term_memory.append(f"[{time.strftime('%H:%M:%S')}] 我刚刚睡醒，感觉有点迷糊，需要一会儿才能完全进入状态。")
 
         self.long_term_memory = None # 长期记忆占位符
 
@@ -90,6 +91,7 @@ class WorldModel:
             return
         memory_entry = f"[{time.strftime('%H:%M:%S')}] {action_summary}"
         self.short_term_memory.append(memory_entry)
+        print(self.short_term_memory)
         print(f"WorldModel: 短期记忆已添加 - '{memory_entry}'")
 
     def update_stimuli(self, notification: Optional[str] = None, alert: Optional[str] = None):
@@ -141,7 +143,7 @@ class WorldModel:
         # self.alerts.clear()
 
         # --- 格式化近期活动 ---
-        action_summary_str = "\n".join(self.short_term_memory) 
+        action_summary_str = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self.short_term_memory) 
         # action_summary_str = "\n".join(self.short_term_memory) if self.short_term_memory else "你刚刚睡醒，思维缓存正在加载中，感觉有点迷糊，需要一会儿才能完全进入状态。"
         
         context = {
