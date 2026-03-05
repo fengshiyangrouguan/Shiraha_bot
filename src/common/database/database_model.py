@@ -79,3 +79,47 @@ class EventDB(SQLModel, table=True):
         default=None 
     )
 
+class StickerDB(SQLModel, table=True):
+    """Database model for StickerInfo."""
+    __tablename__ = "sticker"
+    id: str = Field(primary_key=True)
+
+    image_hash: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    full_path: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    format: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    description: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+    
+    emotion: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    record_time: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    last_used_time: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+
+    usage_count: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )

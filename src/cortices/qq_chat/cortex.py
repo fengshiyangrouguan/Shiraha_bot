@@ -10,6 +10,7 @@ from src.common.event_model.event import Event
 from .config.config_schema import CortexConfigSchema
 from .chat.event_processor import QQChatEventProcessor
 from src.cortices.manager import CortexManager
+from .chat.sticker_system.sticker_manager import StickerManager
 
 from src.system.di.container import container
 from src.platform.platform_manager import PlatformManager
@@ -33,6 +34,7 @@ class QQChatCortex(BaseCortex):
         self._process_events_task: Optional[asyncio.Task] = None
         self.llm_request_factory: Optional[LLMRequestFactory] = None
         self.database_manager: Optional[DatabaseManager] = None
+        self.sticker_manager: Optional[StickerManager] = None
 
 
     async def setup(self, world_model: WorldModel, config: CortexConfigSchema, cortex_manager: CortexManager):
@@ -45,10 +47,12 @@ class QQChatCortex(BaseCortex):
 
         self.llm_request_factory = container.resolve(LLMRequestFactory)
         self.database_manager = container.resolve(DatabaseManager)
-        self.event_processor = QQChatEventProcessor(world_model,config.bot_id)
+        self.event_processor = QQChatEventProcessor(world_model,config.bot_id)   
         platform_manager: PlatformManager = container.resolve(PlatformManager)
 
-        # 1. 设置并启动平台适配器
+        self.sticker_manager = StickerManager(self.database_manager)
+        container.register_instance(StickerManager, self.sticker_manager)
+        await self.sticker_manager.start()
         adapter_config = self.config.adapter
 
         try:
@@ -60,7 +64,7 @@ class QQChatCortex(BaseCortex):
         except Exception as e:
             logger.error(f"QQChatCortex: 启动适配器 '{adapter_config.adapter_id}' 失败: {e}")
 
-        # 2. 启动事件处理器
+        # 3. 启动事件处理器
         self._process_events_task = asyncio.create_task(self.event_processor.run())
 
         logger.info(f"QQChatCortex: 启动完成。")

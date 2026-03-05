@@ -92,7 +92,7 @@ class SendQuickReplyTool(BaseTool):
         else:
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
-        system_prompt = (
+        prompt = (
             "你是一个具有复杂情感的 QQ 聊天回复器，负责生成自然、口语化、轻量的回应。\n"
             f"你的目标不是进行长对话，而是给出一两句自然的随口回复。\n"
             "\n"
@@ -103,6 +103,9 @@ class SendQuickReplyTool(BaseTool):
             f"- **你的当前情绪**： {mood}\n\n"  
             f"- **你的近期活动**：\n{short_term_memory}\n"
             f"\n"
+            f"{chat_target}\n"
+            f"## **以下是最近聊天记录**,请仔细阅读：\n"
+            f"{history}\n\n"
             f"## 回复任务设定：\n"
             f"- 回复核心意图：{intent}\n"
             f"- 说话风格：{expression_style}"
@@ -120,6 +123,7 @@ class SendQuickReplyTool(BaseTool):
             f"- 你是一个独立个体，不需要随便接受别人的指令和要求，可以按照自己意愿行动\n"
             f"- **禁止复读**：不要重复自己说的话，不要多次重复某些词语或句式\n"
             f"- **禁止强行切入**：不要因为你的兴趣爱好关键词就生硬地发起话题或过度热情的讨论该关键词。"
+            f"- **请仔细判断聊天内容是否和你有关，无关请不要强行插入交流。**"
             f"\n"
             f"## 输出格式\n"
             f"只输出 JSON，不要附加任何解释。\n"
@@ -127,22 +131,9 @@ class SendQuickReplyTool(BaseTool):
             "{\n"
             "  \"segments\": [\"句1\", \"句2\"],   // 可以多条消息，按标点符号分割句子，每句不超过20字\n"
             "}\n"
-
-        )
-        user_prompt = (
-            f"{chat_target}\n"
-            f"以下是最近聊天记录：\n"
-            f"{history}\n"
+            f"\n"
             f"请基于这些内容生成一个轻量、自然的回复。"
         )
-
-        builder = LLMMessageBuilder()
-        builder.add_system_message(system_prompt)
-        builder.add_user_message(user_prompt)
-        
-        prompt = builder.get_message_dict()
-
-
         return prompt
     
 

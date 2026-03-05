@@ -32,7 +32,7 @@ class AgentLoop:
         self.world_model:WorldModel = container.resolve(WorldModel)
         self._is_running = False
         self._main_task: Optional[asyncio.Task] = None
-        self.heartbeat_interval = 30 
+        self.heartbeat_interval = 5
         
 
     async def _execute_motive_plan(self, motive: str):
@@ -136,7 +136,7 @@ class AgentLoop:
                 logger.error(f"AgentLoop:   主循环中发生未捕获错误: {e}", exc_info=True)
                 import traceback
                 traceback.print_exc()
-                await asyncio.sleep(self.heartaint_interval)
+                await asyncio.sleep(self.heartbeat_interval)
 
     def start(self):
         """启动 Agent 的主循环"""
