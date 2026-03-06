@@ -135,3 +135,30 @@ class OpenAIClient(BaseClient):
         except Exception as e:
             # 对于其他未知错误，暂时直接抛出，或者也可以封装成一个通用异常
             raise e
+
+
+    async def _internal_get_embedding(self, model_config: ModelConfig, embedding_input: str, **kwargs) -> list[float]:
+        """
+        实际执行向量化请求的内部方法。
+        """
+        try:
+            # Embedding 的参数必须非常干净！
+            request_params = {
+                "model": model_config.model_identifier,
+                "input": embedding_input,
+            }
+            # 关键：调用底层的 embeddings 接口，而不是 chat 接口
+            response = await self.client.embeddings.create(**request_params)
+
+            if not response.data or len(response.data) == 0:
+                raise EmptyResponseException()
+
+            # 返回向量列表 [0.123, 0.456, ...]
+            return response.data[0].embedding
+
+        except APIStatusError as e:
+            raise RespNotOkException(status_code=e.status_code, message=e.message) from e
+        except APIConnectionError as e:
+            raise NetworkConnectionError() from e
+        except Exception as e:
+            raise e

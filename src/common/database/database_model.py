@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any, Set
-from sqlmodel import Text, Field, SQLModel, Relationship, JSON, Column
+from sqlmodel import Text, Field, SQLModel, Relationship, JSON, Column, Boolean
+from sqlalchemy import PickleType
 
 class ConversationInfoDB(SQLModel, table=True):
     """Database model for ConversationInfo."""
@@ -82,19 +83,13 @@ class EventDB(SQLModel, table=True):
 class StickerDB(SQLModel, table=True):
     """Database model for StickerInfo."""
     __tablename__ = "sticker"
-    id: str = Field(primary_key=True)
-
-    image_hash: Optional[str] = Field(
+    sticker_hash: str = Field(default=None, primary_key=True,)
+    file_path: Optional[str] = Field(
         default=None,
-        sa_column=Column(Text, nullable=True)
+        sa_column=Column(Text, nullable=False)
     )
 
-    full_path: Optional[str] = Field(
-        default=None,
-        sa_column=Column(Text, nullable=True)
-    )
-
-    format: Optional[str] = Field(
+    file_format: Optional[str] = Field(
         default=None,
         sa_column=Column(Text, nullable=True)
     )
@@ -109,7 +104,15 @@ class StickerDB(SQLModel, table=True):
         sa_column=Column(Text, nullable=True)
     )
 
-    record_time: Optional[str] = Field(
+    embedding: Optional[List[float]] = Field(
+        sa_column=Column(PickleType,nullable=True),
+        default=None 
+    )
+    is_registered: Optional[bool] = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False)
+    )
+    register_time: Optional[str] = Field(
         default=None,
         sa_column=Column(Text, nullable=True)
     )

@@ -111,8 +111,9 @@ class NapcatEventDispatcher:
             elif seg_type == "image":
                 # 判断是不是表情包
 
-                sub_type = seg["data"].get("sub_type", "")
-                if sub_type == 1: 
+                sub_type = int(seg["data"].get("sub_type", ""))
+                print(f"收到图片消息，sub_type={sub_type}")
+                if sub_type == 1:  # OneBot 协议中 sub_type=1 通常表示表情包
                     seg_type = "sticker"
                 file_id = data["file"]
                 file_size = data["file_size"]
@@ -162,6 +163,7 @@ class NapcatEventDispatcher:
             #TODO:判断自己有没有被at
 
             #TODO 当前无特殊解析逻辑的直接插入 例如reply，at，json，以后再做处理
+            print(f"消息段解析结果: type={seg_type}")
             segments.append(MessageSegment(type=seg_type, data=data))
 
         # 构建 Message

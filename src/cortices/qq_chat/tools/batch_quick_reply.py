@@ -207,7 +207,7 @@ class SendQuickReplyTool(BaseTool):
 
                 llm_factory = self.llm_request_factory
                 llm_request = llm_factory.get_request("replyer")
-                content, _ = await llm_request.execute(prompt=json.dumps(prompt))
+                content, _ = await llm_request.execute(prompt=prompt)
                 
                 # 4. 解析生成的台词 JSON
                 try:

@@ -50,9 +50,8 @@ class QQChatCortex(BaseCortex):
         self.event_processor = QQChatEventProcessor(world_model,config.bot_id)   
         platform_manager: PlatformManager = container.resolve(PlatformManager)
 
-        self.sticker_manager = StickerManager(self.database_manager)
-        container.register_instance(StickerManager, self.sticker_manager)
-        await self.sticker_manager.start()
+        # self.sticker_manager = StickerManager(self.database_manager)
+        # await self.sticker_manager.start()
         adapter_config = self.config.adapter
 
         try:

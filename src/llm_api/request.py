@@ -149,3 +149,17 @@ class LLMRequest:
             messages=messages,
             kwargs=kwargs
         )
+    
+
+    # src/llm_api/request.py
+
+    async def execute_embedding(self, prompt: str, **kwargs) -> Tuple[List[float], str]:
+        """
+        专门用于向量化的执行方法
+        """
+        # 强制修正任务名称判断逻辑
+        return await self._execute_request_loop(
+            client_method_name="_internal_get_embedding", # 必须调用底层 client 的 embedding 方法
+            embedding_input=prompt,
+            kwargs=kwargs
+        )
