@@ -2,6 +2,7 @@ import time
 import uuid
 import json
 import asyncio
+import re
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from src.cortices.tools_base import BaseTool
@@ -13,10 +14,16 @@ from src.common.event_model.event import Event
 from src.common.event_model.event_data import Message, MessageSegment
 from src.common.event_model.info_data import UserInfo
 from src.common.event_model.info_data import ConversationInfo
-from src.common.database.database_model import ConversationInfoDB
+from src.common.database.database_model import ConversationInfoDB, UserInfoDB
 from src.llm_api.dto import LLMMessageBuilder
 from src.llm_api.factory import LLMRequestFactory
 from src.common.database.database_manager import DatabaseManager
+from src.cortices.qq_chat.chat.sticker_system.sticker_manager import StickerManager
+from src.platform.sources.qq_napcat.utils.image import file_path_to_base64
+from src.system.di.container import container
+from src.common.logger import get_logger
+
+logger = get_logger("BatchQuickReplyTool")
 
 if TYPE_CHECKING:
     from src.cortices.qq_chat.cortex import QQChatCortex
@@ -36,6 +43,7 @@ class SendQuickReplyTool(BaseTool):
         self.cortex = cortex
         self.llm_request_factory = llm_request_factory
         self.database_manager = database_manager
+        self.sticker_manager = container.resolve(StickerManager)
 
     @property
     def scope(self) -> str:
@@ -60,7 +68,6 @@ class SendQuickReplyTool(BaseTool):
                                     "type": "object",
                                     "properties": {
                                         "tone": {"type": "string", "description": "语气：敷衍/热情/冷淡/可爱等"},
-                                        "length": {"type": "string", "description": "短/中/长"},
                                         "energy": {"type": "string", "description": "能量感：低/中/高"},
                                         "role_manner": {"type": "string", "description": "关系定位：像朋友/像陌生人等"}
                                     } 
@@ -88,6 +95,12 @@ class SendQuickReplyTool(BaseTool):
 
         if conversation_info.conversation_type == "group":
             chat_target = f"你正在群聊中与群友聊天。"
+            # group_action = (
+            #     """      
+            #         at: @某个人，用于引起某人注意（通常是群聊中的人）:
+            #         {action: "at",at_name: "这是你要@的人的名字，通常是群聊中的人",content(at时非必要): "要发送的文本内容"}
+            #     """
+            # )
             # chat_target = f"你正在群聊{chat_stream.conversation_info.conversation_name}中与群友聊天。"
         else:
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
@@ -110,15 +123,14 @@ class SendQuickReplyTool(BaseTool):
             f"- 回复核心意图：{intent}\n"
             f"- 说话风格：{expression_style}"
             f"- 语气: {style.get('tone', '平静')}\n"
-            f"- 回复长度: {style.get('length', '短')}\n"
             f"- 回复能量感：{style.get('energy', '中')}\n"
             f"- 身份表现方式：{style.get('role_manner', '像朋友')}\n"
             f"\n"
             f"## 回复生成规范\n"
             f"- 不描述动作（例如不要写“我摇了摇头”等）\n"
-            f"- 尽量少用标点\n"
+            f"- 尽量使用短句"
+            f"- 句尾不用句号\n"
             f"- 可以分句，但不要太长\n"
-            f"- 可以分成 1~3 条短句\n"
             f"- 不要复述“意图”本身\n"
             f"- 你是一个独立个体，不需要随便接受别人的指令和要求，可以按照自己意愿行动\n"
             f"- **禁止复读**：不要重复自己说的话，不要多次重复某些词语或句式\n"
@@ -127,24 +139,43 @@ class SendQuickReplyTool(BaseTool):
             f"\n"
             f"## 输出格式\n"
             f"只输出 JSON，不要附加任何解释。\n"
-            f"格式如下：\n"
-            "{\n"
-            "  \"segments\": [\"句1\", \"句2\"],   // 可以多条消息，按标点符号分割句子，每句不超过20字\n"
-            "}\n"
+            f"你可以按情况随意选择以下一个或多个action:\n"
+            """
+            reply: 回复某一句话
+            {action: "reply", "message_id": "要回复的消息的消息ID",content: "要回发送的文本内容"}
+
+            text: 发一条消息
+            {action: "text",content: "要发送的文本内容"}
+
+            sticker: 发一个表情包
+            {action: "sticker",sticker_emotion: "想表达的情感或内容"}
+            \n
+            """
+            f"**action可重复使用**"
+            f"输出格式示例如下：\n"
+            """
+            {
+                "actions": [
+                    {action: "……"},
+                    {action: "……"},
+                    ……
+                ]   
+            }"""
             f"\n"
-            f"请基于这些内容生成一个轻量、自然的回复。"
+            f"## **重要提示**:现在在测试模式，请你只调用发表情包的action\n"
+            f"请基于这些内容生成JSON输出。"
         )
         return prompt
     
 
-    async def _post_self_message_event(self, conversation_id: str, conversation_info: ConversationInfo, text: str):
+    async def _post_self_message_event(self, conversation_id: str, conversation_info: ConversationInfo, type: str, data: str):
         """内部方法：将发送的消息包装成事件发回处理器"""
         bot_user_info = UserInfo(
             user_id=self.cortex.config.bot_id,
             user_nickname=self._world_model.bot_name,
             user_cardname=self._world_model.bot_name
         )
-        message_seg = MessageSegment(type="text", data=text)
+        message_seg = MessageSegment(type=type, data=data)
         message_event_data = Message(message_id=str(uuid.uuid4()))
         message_event_data.add_segment(message_seg)
 
@@ -181,7 +212,7 @@ class SendQuickReplyTool(BaseTool):
                 chat_stream = None
                 if qq_chat_data and conversation_id in qq_chat_data.streams:
                     chat_stream = qq_chat_data.streams[conversation_id]
-                    recent_messages = chat_stream.build_chat_history_for_llm()
+                    recent_messages = chat_stream.build_chat_history_has_msg_id()
                     conversation_info = chat_stream.conversation_info
                 else:
                     # 尝试从数据库兜底
@@ -209,43 +240,74 @@ class SendQuickReplyTool(BaseTool):
                 llm_request = llm_factory.get_request("replyer")
                 content, _ = await llm_request.execute(prompt=prompt)
                 
-                # 4. 解析生成的台词 JSON
+                # 4. 解析生成的JSON
                 try:
                     json_str = content.strip()
                     if json_str.startswith("```"):
                         json_str = json_str.replace("```json", "").replace("```", "").strip()
                     reply_obj = json.loads(json_str)
-                    segments = reply_obj.get("segments", [])
+                    actions = reply_obj.get("actions", [])
                 except Exception:
                     results.append({"id": conversation_id, "status": "error", "reason": "台词解析失败"})
                     continue
 
-                if not segments:
+                if not actions:
                     results.append({"id": conversation_id, "status": "ignored", "reason": "AI决定不回复"})
                     continue
+                
+                # 5. 执行具体 Action
+                for act in actions:
+                    act_type = act.get("action")
+                    text_content = act.get("content", "").strip()
+                    try:
+                        if act_type == "reply":
+                            # 引用回复
+                            msg_id = act.get("message_id")
+                            if msg_id:
+                                await self.adapter.message_api.send_text(
+                                    conversation_info=conversation_info, 
+                                    text=text_content, 
+                                    reply_id=msg_id)
+                            else:
+                                # 降级为普通文本
+                                await self.adapter.message_api.send_text(conversation_info, text_content)
+                            await self._post_self_message_event(conversation_id, conversation_info, text_content)
 
-                # 5. 模拟打字并发送消息
-                sent_texts = []
-                for seg in segments:
-                    seg = seg.strip()
-                    if not seg: continue
+                        elif act_type == "at":
+                            # @ 某人
+                            at_person = act.get("at_person", "")
+
+                        elif act_type == "text":
+                            # 普通文本
+                            if text_content:
+                                segments = re.split(r'[,，\s]+', text_content)
+                                await self._send_text_with_segments(conversation_info, segments)
+
+                        elif act_type == "sticker":
+                            sticker_emotion = act.get("sticker_emotion", "")
+                            if sticker_emotion:
+                                llm_embedding_request = llm_factory.get_request("embedding")
+                                embedding, _ = await llm_embedding_request.execute_embedding(sticker_emotion)
+                                logger.info(f"根据情感描述 '{sticker_emotion}'，开始查找")  # 打印前5维作为示例
+                                file_path = self.sticker_manager.search_stickers(embedding)
+                                logger.info(f"查找完成，结果文件路径: {file_path}")
+                                if file_path:
+                                    logger.info(f"找到的表情包路径: {file_path}")
+                                    await self.adapter.message_api.send_sticker(conversation_info, file_path)
+                                    logger.info(f"发送表情包")
+                                    file_base64 = file_path_to_base64(file_path)
+                                    await self._post_self_message_event(conversation_info.convsation_id, conversation_info, "sticker", file_base64)
+                                else:
+                                    logger.info(f"未匹配成功")
+
+
+                        # 记录 Event 到系统（用于更新短期记忆和上下文） 
                     
-                    # 模拟打字延迟
-                    delay = min(max(len(seg) * 0.15, 0.6), 2.5)
-                    await asyncio.sleep(delay)
-                    
-                    # 实际发送
-                    await self.adapter.message_api.send_text(conversation_info, seg)
-                    sent_texts.append(seg)
+                    except Exception as e:
+                        results.append({"id": conversation_id, "status": "error", "reason": f"执行 action 失败: {e}"})
+                        continue
 
-                    # 记录 Event 到系统（用于更新历史记录）
-                    await self._post_self_message_event(conversation_id, conversation_info, seg)
 
-                results.append({
-                    "target": conversation_info.conversation_name,
-                    "intent": intent,
-                    "content": " | ".join(sent_texts)
-                })
 
             # 6. 最终返回给应用层的报告
             # 如果 Planner 提供了 summary，我们优先返回它，作为记忆的自白
@@ -253,9 +315,22 @@ class SendQuickReplyTool(BaseTool):
                 return summary
             
             # 否则，返回一个事实清单
-            report = "【批量回复完成】\n" + "\n".join([f"- 对 {r['target']} 回复了: {r['content']}" for r in results if "target" in r])
+            report = "我在qq里批量回复了未读消息。"
             return report
 
         except Exception as e:
             return f"批量发送时发生崩溃: {e}"
 
+    async def _send_text_with_segments(self, conversation_info: ConversationInfo, segments: list[str]):
+        """辅助方法：将文本分段发送，并在每段之间模拟打字延迟"""
+        for seg in segments:
+            seg = seg.strip()
+            if not seg: continue
+            
+            # 模拟打字延迟
+            delay = min(max(len(seg) * 0.15, 0.6), 2.5)
+            await asyncio.sleep(delay)
+            
+            # 实际发送
+            await self.adapter.message_api.send_text(conversation_info, seg)
+            await self._post_self_message_event(conversation_info.convsation_id, conversation_info, "text", seg)

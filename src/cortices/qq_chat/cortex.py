@@ -50,8 +50,9 @@ class QQChatCortex(BaseCortex):
         self.event_processor = QQChatEventProcessor(world_model,config.bot_id)   
         platform_manager: PlatformManager = container.resolve(PlatformManager)
 
-        # self.sticker_manager = StickerManager(self.database_manager)
-        # await self.sticker_manager.start()
+        self.sticker_manager = StickerManager(self.database_manager)
+        await self.sticker_manager.start()
+        container.register_factory(StickerManager, lambda: self.sticker_manager)  # 将sticker_manager注册到DI容器中
         adapter_config = self.config.adapter
 
         try:

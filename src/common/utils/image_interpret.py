@@ -15,6 +15,7 @@ from src.system.di.container import container
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import StickerDB
 from src.common.event_model.sticker import Sticker
+from src.cortices.qq_chat.chat.sticker_system.sticker_manager import StickerManager
 from src.common.logger import get_logger
 from src.common.config.config_service import ConfigService
 from time import time
@@ -78,6 +79,7 @@ async def interpret_sticker(base64_image_data: str) -> str:
         db_manager: DatabaseManager = container.resolve(DatabaseManager)
         llm_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
         config_service: ConfigService = container.resolve(ConfigService)
+        sticker_manager: StickerManager = container.resolve(StickerManager)
     except Exception:
         logger.warning("无法解析 ImageInterpreter 的依赖，可能不在正确的 contexts 中。")
         return "[表情包]"
@@ -91,7 +93,10 @@ async def interpret_sticker(base64_image_data: str) -> str:
         image_hash = hashlib.md5(image_bytes).hexdigest()
         image_format = Image.open(io.BytesIO(image_bytes)).format.lower()
         logger.debug(f"新表情包 (hash: {image_hash[:10]}..., format: {image_format}), 调用VLM进行分析。")
-
+        sticker_search = sticker_manager.get_sticker_by_hash(image_hash)
+        if sticker_search:
+            logger.info(f"表情包 {image_hash[:10]} 已存在，直接使用缓存的描述和情感标签。")
+            return f"{prefix}{sticker_search.description}"
         # --- VLM视觉分析 ---
         if image_format in ["gif", "GIF"]:
             base64_image_data = _transform_gif(base64_image_data)
@@ -143,9 +148,21 @@ async def interpret_sticker(base64_image_data: str) -> str:
                 file_path=file_path,
                 file_format=image_format,
                 description=description, 
-                emotions=emotions, 
-                embedding=embedding
+                emotion=emotions, 
+                embedding=embedding,
+                last_used_time=current_timestamp
             )
+            new_sticker = Sticker(
+                sticker_hash=image_hash,
+                file_path=file_path,
+                file_format=image_format,
+                description=description,
+                emotions=emotions,
+                embedding=embedding,
+                last_used_time=current_timestamp,
+                usage_count=0)
+            
+            await sticker_manager.add_sticker_to_cache(new_sticker)
         except Exception as e:
             logger.error(f"保存表情包文件时出错: {e}", exc_info=True)
 
@@ -157,7 +174,7 @@ async def interpret_sticker(base64_image_data: str) -> str:
         return "[表情包]"
 
 
-async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str, file_path: str, file_format: str, description: str, emotions: List[str], embedding: List[float]):
+async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str, file_path: str, file_format: str, description: str, emotions: List[str], embedding: List[float],last_used_time: float):
     """
     (内部函数) 创建新的Sticker记录，并将其保存到数据库和内存缓存。
     """
@@ -173,7 +190,7 @@ async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str
         emotion=json.dumps(emotions, ensure_ascii=False), # 使用传入的情感标签
         embedding=embedding,
         is_registered=False,
-        last_used_time=time(),
+        last_used_time=last_used_time,
         usage_count='0',
     )
 

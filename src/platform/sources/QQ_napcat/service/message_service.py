@@ -10,8 +10,10 @@ from src.platform.sources.qq_napcat.utils.msg_api_build import (
     build_face_seg,
     build_image_seg,
     build_poke_seg,
-    build_record_seg
+    build_record_seg,
+    build_sticker_seg
 )
+from src.platform.sources.qq_napcat.utils.image import file_path_to_base64
 
 _send_websocket: Callable[[Dict], None]
 
@@ -75,8 +77,11 @@ class NapcatMessageService:
 
     async def send_image(self, conversation_info: ConversationInfo, file: str):
         pass
-    async def send_sticker(self, conversation_info: ConversationInfo, file: str):
-        pass
+    async def send_sticker(self, conversation_info: ConversationInfo, file_path: str):
+        file_base64 = file_path_to_base64(file_path)
+        segments = []
+        segments.append(build_sticker_seg(file_base64))
+        return await self.send_message(conversation_info, segments)
 
 
 

@@ -79,10 +79,10 @@ class MainPlanner(BasePlanner):
         builder.add_user_message(user_prompt)
         
         prompt = builder.get_message_dict()
-        print("===系统提示语===")
-        print(system_prompt)
-        print("===用户提示语===")
-        print(user_prompt)
+        # print("===系统提示语===")
+        # print(system_prompt)
+        # print("===用户提示语===")
+        # print(user_prompt)
         
         plan_result = await self.send_to_LLM(prompt)
         return plan_result

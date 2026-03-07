@@ -21,6 +21,7 @@ class QQChatMessage(BaseModel):
     """
     代表一个标准化的聊天消息，用于构建 LLM 上下文。
     """
+    message_id: Optional[str] = None
     user_nickname: Optional[str] = None
     user_cardname: Optional[str] = None
     user_id: Optional[str] = None
@@ -113,6 +114,7 @@ class QQChatStream(BaseModel):
 
             # 创建并添加标准化的聊天消息
             chat_message = QQChatMessage(
+                message_id=event.event_id,
                 user_nickname=event.user_info.user_nickname if event.user_info else None,
                 user_cardname=event.user_info.user_cardname if event.user_info else None,
                 user_id=event.user_info.user_id if event.user_info else None,
@@ -165,7 +167,43 @@ class QQChatStream(BaseModel):
             #TODO: 以后去除id，LLM想要的话，提供nickname 从数据库查找
             line = (
                 # f"[{i+1}] [{timestamp_str}] {sender_cardname}({sender_nickname}): {msg.content or '[消息内容为空]'}"
-                f"[{timestamp_str}] {sender_cardname}({sender_nickname}): {msg.content or '[消息内容为空]'}"
+                f"[{timestamp_str}] {sender_nickname}: {msg.content or '[消息内容为空]'}"
+            )
+            history_lines.append(line)
+        
+        # 使用指定的分隔符连接所有消息行
+        return separator.join(history_lines)
+
+    def build_chat_history_has_msg_id(self, separator: str = "\n---\n") -> str:
+        """
+        根据 llm_context 列表构建一个用于 LLM 输入的格式化聊天历史字符串,且含有消息 ID。
+
+        Args:
+            separator: 用于分隔每条消息的字符串。
+
+        Returns:
+            格式化后的聊天历史字符串。
+        """
+        history_lines = []
+        
+        # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
+        for i, msg in enumerate(self.llm_context):
+            
+            # 确定发送者名称：优先使用名片，其次是昵称，最后使用用户 ID
+            sender_nickname = msg.user_nickname or "未知用户"
+            msg_id = msg.message_id or "未知消息ID"
+            # 格式化时间戳（可选，但通常有助于 LLM 理解顺序）
+            timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+            if self.bot_id is not None and str(msg.user_id) == str(self.bot_id):
+                sender_nickname = "我自己"
+
+            # 格式化消息内容：[序号] [时间] 发送者: 消息内容
+            # 注意：i 是从 0 开始的索引
+            #TODO: 以后去除id，LLM想要的话，提供nickname 从数据库查找
+            line = (
+                # f"[{i+1}] [{timestamp_str}] {sender_cardname}({sender_nickname}): {msg.content or '[消息内容为空]'}"
+                f"[{timestamp_str}] {sender_nickname}(消息ID:{msg_id}): {msg.content or '[消息内容为空]'}"
             )
             history_lines.append(line)
         

@@ -2,6 +2,7 @@ import base64
 import hashlib
 import logging
 import io
+import os
 from PIL import Image
 from typing import Optional
 
@@ -103,3 +104,13 @@ def image_base64_to_uuid(base64_str: str) -> str:
     # 截断成 UUID-like 格式（如果你喜欢）
     uuid_like = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
     return uuid_like
+
+def file_path_to_base64(file_path: str) -> str:
+    """将本地文件转换为 Base64 字符串"""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+        
+    with open(file_path, "rb") as image_file:
+        # 读取二进制数据 -> 编码为 Base64 -> 转为字符串
+        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        return encoded_string
