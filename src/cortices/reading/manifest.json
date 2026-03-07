@@ -1,0 +1,7 @@
+{
+    "cortex_name": "ReadingCortex",
+    "version": "0.1.0",
+    "description": "一个用于管理和阅读书籍的Cortex。",
+    "entry_point": "cortex.py",
+    "entry_class": "ReadingCortex"
+}
