@@ -163,7 +163,6 @@ class NapcatEventDispatcher:
             #TODO:判断自己有没有被at
 
             #TODO 当前无特殊解析逻辑的直接插入 例如reply，at，json，以后再做处理
-            print(f"消息段解析结果: type={seg_type}")
             segments.append(MessageSegment(type=seg_type, data=data))
 
         # 构建 Message

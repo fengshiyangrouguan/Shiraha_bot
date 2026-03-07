@@ -129,7 +129,7 @@ async def interpret_sticker(base64_image_data: str) -> str:
             emotions = random.sample(emotions, 2)
 
         llm_embedding_request = llm_factory.get_request("embedding")
-        embedding, _ = await llm_embedding_request.execute_embedding(description)
+        embedding, _ = await llm_embedding_request.execute_embedding(emotions_text)
         logger.info(f"表情包分析结果: 描述: {description[:50]}... -> 情感标签: {emotions} -> embedding: {embedding}")
 
         # --- 存入数据库和缓存 ---
@@ -157,12 +157,12 @@ async def interpret_sticker(base64_image_data: str) -> str:
                 file_path=file_path,
                 file_format=image_format,
                 description=description,
-                emotions=emotions,
+                emotion=emotions,
                 embedding=embedding,
                 last_used_time=current_timestamp,
                 usage_count=0)
             
-            await sticker_manager.add_sticker_to_cache(new_sticker)
+            sticker_manager.add_sticker_to_cache(new_sticker)
         except Exception as e:
             logger.error(f"保存表情包文件时出错: {e}", exc_info=True)
 
@@ -174,7 +174,7 @@ async def interpret_sticker(base64_image_data: str) -> str:
         return "[表情包]"
 
 
-async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str, file_path: str, file_format: str, description: str, emotions: List[str], embedding: List[float],last_used_time: float):
+async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str, file_path: str, file_format: str, description: str, emotion: List[str], embedding: List[float],last_used_time: float):
     """
     (内部函数) 创建新的Sticker记录，并将其保存到数据库和内存缓存。
     """
@@ -187,7 +187,7 @@ async def _create_and_cache_sticker(db_manager: DatabaseManager, image_hash: str
         file_path=file_path,
         file_format=file_format,
         description=description,
-        emotion=json.dumps(emotions, ensure_ascii=False), # 使用传入的情感标签
+        emotion=json.dumps(emotion, ensure_ascii=False), # 使用传入的情感标签
         embedding=embedding,
         is_registered=False,
         last_used_time=last_used_time,
