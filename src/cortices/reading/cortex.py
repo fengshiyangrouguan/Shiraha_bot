@@ -2,18 +2,21 @@
 import asyncio
 import os
 import re
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING,List
 
 from src.cortices.base_cortex import BaseCortex
-from src.cortices.reading.context import AgentReadingContext
+from src.cortices.reading.reading_data import ReadingData,Book
 from src.system.di.container import container
-
-if TYPE_CHECKING:
-    from src.common.database.database_manager import DatabaseManager
+from src.cortices.reading.utils.book_file_process import slice_and_tag_book,load_all_books,save_book_to_db
+from src.common.logger import get_logger
+from src.common.database.database_manager import DatabaseManager
+from src.llm_api.factory import LLMRequestFactory
+    
 
 # 定义书籍文件存放路径
 RAW_BOOKS_DIR = "data/book"
 REGISTERED_BOOKS_DIR = "data/book_registered"
+logger = get_logger("ReadingCortex")
 
 class ReadingCortex(BaseCortex):
     """
@@ -24,16 +27,36 @@ class ReadingCortex(BaseCortex):
     
     def __init__(self):
         super().__init__()
-        self.db_manager: Optional["DatabaseManager"] = None
+
+        self.llm_request_factory: Optional[LLMRequestFactory] = None
+        self.database_manager: Optional[DatabaseManager] = None
+
         # Agent 当前的阅读任务上下文。同一时间只进行一项阅读任务。
-        self.agent_reading_task: Optional[AgentReadingContext] = None
+        self.reading_data = ReadingData()
 
     async def setup(self, world_model, config, cortex_manager):
         """Cortex 启动时，解析依赖并启动后台书籍处理任务。"""
         await super().setup(world_model, config, cortex_manager)
-        self.db_manager = container.resolve("DatabaseManager")
-        print("📚 ReadingCortex: 启动，准备扫描新书...")
+        self.database_manager = container.resolve(DatabaseManager)
+        self.llm_request_factory = container.resolve(LLMRequestFactory)
+        await self._world_model.save_cortex_data("reading_data", self.reading_data)  # 初始化时保存空的阅读上下文
+        logger.info("ReadingData: 启动，开始扫描书架...")
+        await self._load_registered_books_context()  # 启动时先加载已注册书籍的上下文
+
         asyncio.create_task(self._scan_and_process_new_books())
+        # await self._scan_and_process_new_books()
+    
+    async def _load_registered_books_context(self):
+        """
+        从数据库加载已注册书籍的信息，初始化 ReadingData。
+        这保证了 Agent 在扫描新书前，就已经知道自己‘读过什么’。
+        """
+        registered_books:List[Book] = await load_all_books(self.database_manager)
+        
+        # 将已注册书籍同步到 reading_data 中
+        # 将最新的阅读上下文保存到 WorldModel
+        self.reading_data.init_library(registered_books) 
+        await self._world_model.save_cortex_data("reading_data", self.reading_data)
 
     async def _scan_and_process_new_books(self):
         """扫描原始书籍目录，处理新书并注册到数据库。"""
@@ -41,82 +64,58 @@ class ReadingCortex(BaseCortex):
         os.makedirs(REGISTERED_BOOKS_DIR, exist_ok=True)
         await asyncio.sleep(1)
 
-        registered_books = await self.db_manager.get_all_books()
-        registered_titles = {book.title for book in registered_books}
-        print(f"📚 已注册书籍: {registered_titles or '无'}")
+        registered_titles = self.reading_data.get_book_titles()
+        logger.info(f"已注册书籍: {registered_titles or '无'}")
 
         for filename in os.listdir(RAW_BOOKS_DIR):
-            book_title, _ = os.path.splitext(filename)
+            book_title, format = os.path.splitext(filename)
+            # eg: .md→md, .txt→txt
+            format = format.lstrip('.').lower()
+            new_books_list = []
             if book_title not in registered_titles:
-                await self._process_one_book(filename, book_title)
+                new_books_list.append(book_title)
+                await self._process_one_book(filename, book_title, format)
+            new_books_str = ", ".join(new_books_list)
+            self._world_model.notifications["书房"] = f"上架了新书：{new_books_str}"
 
-    async def _process_one_book(self, filename: str, book_title: str):
+    async def _process_one_book(self, filename: str, book_title: str, format: str):
         """处理单本新书的切片和注册。"""
-        print(f"📚 发现新书: {book_title}，正在处理...")
+        logger.info(f"📚 发现新书: {book_title}，正在处理...")
         raw_path = os.path.join(RAW_BOOKS_DIR, filename)
-        registered_path = os.path.join(REGISTERED_BOOKS_DIR, f"{book_title}_tagged.txt")
+        registered_file_path = os.path.join(REGISTERED_BOOKS_DIR, f"{filename}")
         
         try:
             # 1. 内化的切片逻辑
-            self._slice_and_tag_book(
+            slice_and_tag_book(
                 input_path=raw_path,
-                output_path=registered_path,
+                output_path=registered_file_path,
                 max_chunk_size=1000
             )
             # 2. 注册到数据库
-            await self.db_manager.add_book(
-                title=book_title,
-                raw_file_path=raw_path,
-                registered_file_path=registered_path,
-                status="registered"
+            await save_book_to_db(
+                db_manager=self.database_manager,
+                book_title=book_title,
+                format=format,
+                registered_file_path=registered_file_path,
+                status="新书未读",
+                last_read_position=0,
+                last_read_time=None,
+                is_finished_reading=False
             )
-            print(f"✅ 书籍 '{book_title}' 已成功切片并注册。")
+
+            logger.info(f"书籍 '{book_title}' 已成功切片并注册。")
+            new_book = Book(
+                book_title=book_title,
+                format=format,
+                registered_file_path=registered_file_path,
+                status="新书未读",
+                last_read_time=None,
+                is_finished_reading=False
+            )
+            self.reading_data.update_library(new_book)
+            await self._world_model.save_cortex_data("reading_data", self.reading_data)
         except Exception as e:
-            print(f"❌ 处理书籍 '{book_title}' 时发生错误: {e}")
-            await self.db_manager.add_book(
-                title=book_title, raw_file_path=raw_path, 
-                registered_file_path="", status="error"
-            )
-
-    def _slice_and_tag_book(self, input_path: str, output_path: str, max_chunk_size: int):
-        """
-        内化到 Cortex 中的书籍切片与标记功能。
-        逻辑源自之前的 slice_and_tag_by_newline.py 脚本。
-        """
-        with open(input_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-
-        processed_chunks = []
-        current_pos = 0
-        text_len = len(text)
-        tag_format = ("""
-
----(segment {num})---
-
-""")
-
-        while current_pos < text_len:
-            search_from = current_pos + max_chunk_size
-            if search_from >= text_len:
-                processed_chunks.append(text[current_pos:])
-                break
-            
-            split_pos = text.find('\n', search_from)
-            if split_pos == -1:
-                processed_chunks.append(text[current_pos:])
-                break
-            
-            chunk = text[current_pos : split_pos]
-            processed_chunks.append(chunk)
-            current_pos = split_pos + 1
-
-        with open(output_path, 'w', encoding='utf-8') as f:
-            for i, chunk in enumerate(processed_chunks):
-                f.write(chunk)
-                if i < len(processed_chunks) - 1:
-                    f.write(tag_format.format(num=i + 1))
-        
-        print(f"切分完成: {output_path}, 共 {len(processed_chunks)} 个片段。")
+            logger.info(f"处理书籍 '{book_title}' 时发生错误: {e}")
 
     async def teardown(self):
-        print("📚 ReadingCortex: 正在关闭...")
+        logger.info("ReadingCortex: 正在关闭...")

@@ -162,7 +162,6 @@ class SendQuickReplyTool(BaseTool):
                 ]   
             }"""
             f"\n"
-            f"## **重要提示**:现在在测试模式，请你只调用发表情包的action\n"
             f"请基于这些内容生成JSON输出。"
         )
         return prompt

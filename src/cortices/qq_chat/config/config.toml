@@ -17,7 +17,7 @@ group_list_type = "whitelist" # 可选: whitelist, blacklist
 group_list = [
     728636404,
     784394807,
-    871074118,
+ 
     916256590,
     914615760,
 ]
@@ -25,4 +25,4 @@ group_list = [
 private_list_type = "blacklist" # 可选: whitelist, blacklist
 private_list = []
 
-#    
+#       871074118,

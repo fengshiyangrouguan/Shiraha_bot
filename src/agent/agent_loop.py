@@ -39,7 +39,7 @@ class AgentLoop:
         """
         在一个给定的动机下，执行一次 Thought-Action-Observation。
         """
-        logger.info(f"  - 执行单步规划，动机: '{motive}'")
+        logger.info(f"  - 执行单步规划")
         
         # 1. 规划 (Plan) - 接收动机，不再需要 previous_observation
         # 在新的模式下，上一步的观察结果会通过 WorldModel 的整体上下文提供给 Planner
@@ -80,11 +80,10 @@ class AgentLoop:
             capability_descriptions = self.cortex_manager.get_collected_capability_descriptions()
             motive = await self.motive_engine.generate_motive(capability_descriptions)
             
-            if not motive or "无" in motive:
+            if not motive:
                 logger.info(f"  - 结果: 未能生成明确动机，跳过本次循环。")
                 return
 
-            logger.info(f"  - 新的动机: {motive}")
             self.world_model.motive = motive
             # 2. 执行动机 (Execute Motive)
             #    此方法内部包含完整的 Plan-Act-Observe 循环

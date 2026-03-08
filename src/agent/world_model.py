@@ -124,10 +124,10 @@ class WorldModel:
             for key, value in self.notifications.items():
                 # 1. 格式化键名，并在后面加上中文冒号
                 key_str = f"{key}："
-                value_str = f"收到未读消息 {value} 条"
-                entry = f"{key_str}\n{value_str}\n"
+                notification_description = value
+                entry = f"{key_str}{notification_description}\n"
                 result_parts.append(entry)
-                
+                #TODO 需建立更新通知的方法，禁止直接修改字典
             # 将所有格式化后的部分连接起来
             # 使用 "" 作为分隔符，因为每个 entry 已经自带换行符
             notification_str = "未读消息列表：\n- " + "\n".join(result_parts).strip()

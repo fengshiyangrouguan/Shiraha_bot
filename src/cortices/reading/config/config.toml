@@ -1,0 +1,5 @@
+# src/cortices/qq_chat/config/config.toml
+# Reading Cortex 的配置文件
+
+# 是否启用此 Cortex
+enable = true

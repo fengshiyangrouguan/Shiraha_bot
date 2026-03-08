@@ -78,7 +78,7 @@ class CortexManager:
 
                 capability_data = manifest.get("capability", {})
                 capability_name = capability_data.get("name", cortex_name)
-                self._collected_capability_descriptions.extend(capability_name+":")
+                self._collected_capability_descriptions.append(capability_name+":")
                 capability_descriptions = capability_data.get("capability_description", [])
                 self._collected_capability_descriptions.extend(capability_descriptions)
                 self._collected_capability_descriptions.extend(["\n"]) # 添加分隔符，便于后续构建 Prompt

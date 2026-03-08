@@ -126,3 +126,23 @@ class StickerDB(SQLModel, table=True):
         default=None,
         sa_column=Column(Text, nullable=True)
     )
+
+class BookDB(SQLModel, table=True):
+    """Database model for Book information."""
+    __tablename__ = "books"
+    book_title: str = Field(default=None, primary_key=True)
+    format: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+    registered_file_path: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+    status: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
+    last_read_position: Optional[int] = Field(default=0)
+    last_read_time: Optional[float] = Field(default=None)
+    is_finished_reading: Optional[bool] = Field(default=False)
