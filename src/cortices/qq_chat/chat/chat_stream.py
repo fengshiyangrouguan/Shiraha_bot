@@ -27,6 +27,7 @@ class QQChatMessage(BaseModel):
     user_id: Optional[str] = None
     content: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_readed:bool = False
 
 class QQChatStream(BaseModel):
     """
@@ -105,9 +106,9 @@ class QQChatStream(BaseModel):
             event_metadata=event.event_data.metadata
         )
         await self.database_manager.upsert(event_db)
-        logger.info(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
+        logger.debug(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
 
-        logger.info(f"事件 ({event.event_type}) 针对流 ({self.stream_id}) 处理完成。")
+        logger.debug(f"事件 ({event.event_type}) 针对流 ({self.stream_id}) 处理完成。")
 
 
         if event.event_type == "message":
@@ -130,6 +131,7 @@ class QQChatStream(BaseModel):
             # 更新未读计数
             if "self_message" not in event.tags:
                 self.unread_count += 1
+                chat_message.is_readed = True
             
     def mark_as_read(self):
         """
@@ -137,7 +139,7 @@ class QQChatStream(BaseModel):
         """
         self.unread_count = 0
 
-    def build_chat_history_for_llm(self, separator: str = "\n---\n") -> str:
+    def build_chat_history_for_llm(self, separator: str = "\n") -> str:
         """
         根据 llm_context 列表构建一个用于 LLM 输入的格式化聊天历史字符串。
 
@@ -174,7 +176,7 @@ class QQChatStream(BaseModel):
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)
 
-    def build_chat_history_has_msg_id(self, separator: str = "\n---\n") -> str:
+    def build_chat_history_has_msg_id(self, separator: str = "\n") -> str:
         """
         根据 llm_context 列表构建一个用于 LLM 输入的格式化聊天历史字符串,且含有消息 ID。
 
@@ -185,10 +187,14 @@ class QQChatStream(BaseModel):
             格式化后的聊天历史字符串。
         """
         history_lines = []
-        
+        divider_inserted = False
         # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
         for i, msg in enumerate(self.llm_context):
-            
+            if not msg.is_readed and not divider_inserted:
+                if history_lines:  # 确保前面有历史消息才加分割线
+                    history_lines.append("—— 以上为已回复历史消息，请勿回复 ——")
+                divider_inserted = True
+
             # 确定发送者名称：优先使用名片，其次是昵称，最后使用用户 ID
             sender_nickname = msg.user_nickname or "未知用户"
             msg_id = msg.message_id or "未知消息ID"
@@ -197,15 +203,12 @@ class QQChatStream(BaseModel):
 
             if self.bot_id is not None and str(msg.user_id) == str(self.bot_id):
                 sender_nickname = "我自己"
-
-            # 格式化消息内容：[序号] [时间] 发送者: 消息内容
-            # 注意：i 是从 0 开始的索引
-            #TODO: 以后去除id，LLM想要的话，提供nickname 从数据库查找
+                
             line = (
-                # f"[{i+1}] [{timestamp_str}] {sender_cardname}({sender_nickname}): {msg.content or '[消息内容为空]'}"
                 f"[{timestamp_str}] {sender_nickname}(消息ID:{msg_id}): {msg.content or '[消息内容为空]'}"
             )
             history_lines.append(line)
+            msg.is_readed = True
         
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)

@@ -342,31 +342,52 @@ MODULE_COLORS = {
     # 生成
     "replyer": "\033[38;5;208m",  # 橙色
     "llm_api": "\033[38;5;208m",  # 橙色
+
     # 消息处理
     "chat": "\033[38;5;82m",  # 亮蓝色
     "chat_image": "\033[38;5;68m",  # 浅蓝色
-    # emoji
-    "emoji": "\033[38;5;214m",  # 橙黄色，偏向橙色
+    # 表情包
+    "sticker": "\033[38;5;214m",  # 橙黄色，偏向橙色
     "emoji_api": "\033[38;5;214m",  # 橙黄色，偏向橙色
+
     # 核心模块
     "main": "\033[1;97m",  # 亮白色+粗体 (主程序)
+    "main_system": "\033[1;93m",  # 亮黄色
     "memory": "\033[38;5;34m",  # 天蓝色
+    "world_model": "\033[38;5;34m",  # 天蓝色
     "config": "\033[93m",  # 亮黄色
     "common": "\033[95m",  # 亮紫色
+    "motive":  "\033[38;5;93m",  # 浅蓝色
+    "main_planner": "\033[38;5;111m",  # 蓝色
+    "agent_loop": "\033[38;5;24m",  # 67号色，较暗的蓝色，适合不显眼的日志
+    "cortex": "\033[33m",  # 黄色
+
+    # 聊天相关模块
+    "platform_manager": "\033[38;5;240m",  # 灰色
+    "qq_adapter": "\033[38;5;242m",  # 深灰色，更不显眼
+    "qq_chat": "\033[38;5;175m",  # 柔和的粉色，不显眼但保持粉色系
+    "qq_deep_chat": "\033[38;5;175m",  # 柔和的粉色，不显眼但保持粉色系
+    "qq_quick_reply": "\033[38;5;175m",  # 柔和的粉色，不显眼但保持粉色系
+
+    # 读书
+    "reading":"\033[32m",  # 绿色
+
+
+
+
     "tools": "\033[96m",  # 亮青色
     "lpmm": "\033[96m",
     "plugin_system": "\033[91m",  # 亮红色
     "person_info": "\033[32m",  # 绿色
-    "manager": "\033[35m",  # 紫色
+    
     "llm_models": "\033[36m",  # 青色
     "remote": "\033[38;5;242m",  # 深灰色，更不显眼
     "planner": "\033[36m",
     "relation": "\033[38;5;139m",  # 柔和的紫色，不刺眼
-    # 聊天相关模块
-    "hfc": "\033[38;5;175m",  # 柔和的粉色，不显眼但保持粉色系
-    "bc": "\033[38;5;175m",  # 柔和的粉色，不显眼但保持粉色系
+
+
+
     "sub_heartflow": "\033[38;5;207m",  # 粉紫色
-    "subheartflow_manager": "\033[38;5;201m",  # 深粉色
     "background_tasks": "\033[38;5;240m",  # 灰色
     "chat_message": "\033[38;5;45m",  # 青色
     "chat_stream": "\033[38;5;51m",  # 亮青色
@@ -425,31 +446,25 @@ MODULE_COLORS = {
 # 定义模块别名映射 - 将真实的logger名称映射到显示的别名
 MODULE_ALIASES = {
     # 示例映射
-    "sender": "消息发送",
-    "send_api": "消息发送API",
-    "replyer": "言语",
-    "llm_api": "生成API",
-    "emoji": "表情包",
-    "emoji_api": "表情包API",
-    "chat": "所见",
-    "chat_image": "识图",
-    "action_manager": "动作",
-    "memory_activator": "记忆",
-    "tool_use": "工具",
-    "expressor": "表达方式",
-    "database_model": "数据库",
+    "main":"主系统",
+    "main_system": "主系统",
+    "main_planner": "规划器",
+    "motive": "动机",
+    "agent_loop": "思维循环",
     "mood": "情绪",
-    "memory": "记忆",
-    "tool_executor": "工具",
-    "hfc": "聊天节奏",
-    "plugin_manager": "插件",
-    "relationship_builder": "关系",
-    "llm_models": "模型",
-    "person_info": "人物",
-    "chat_stream": "聊天流",
-    "planner": "规划器",
-    "config": "配置",
-    "main": "主程序",
+    "world_model": "三观",
+    
+    "platform_manager": "平台管理器",
+    "qq_adapter":"qq适配器",
+
+    "cortex": "脑区",
+    "qq_chat": "QQ聊天",
+    "qq_deep_chat": "QQ深情陪聊",
+    "qq_quick_reply":"随便聊聊",
+
+    "reading": "书房",
+    "replyer": "回复器",
+    "sticker": "火力斗图王",
 }
 
 RESET_COLOR = "\033[0m"

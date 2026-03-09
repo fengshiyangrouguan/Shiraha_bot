@@ -1,6 +1,9 @@
 # src/llm_api/factory.py
 from typing import Dict
 from .request import LLMRequest
+from src.common.logger import get_logger
+logger = get_logger("LLM_api")
+
 
 class LLMRequestFactory:
     """
@@ -17,7 +20,7 @@ class LLMRequestFactory:
         如果已创建，则从缓存中返回。
         """
         if task_name not in self._cache:
-            print(f"LLMRequestFactory: 首次为任务 '{task_name}' 创建 LLMRequest 实例。")
+            logger.debug(f" 首次为任务 '{task_name}' 创建 LLMRequest 实例。")
             self._cache[task_name] = LLMRequest(task_name=task_name)
         
         return self._cache[task_name]

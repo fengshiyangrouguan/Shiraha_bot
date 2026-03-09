@@ -14,7 +14,7 @@ from src.platform.sources.qq_napcat.service.message_service import NapcatMessage
 from src.platform.sources.qq_napcat.service.command_service import NapcatCommandService
 from src.platform.sources.qq_napcat.config_schema import ConfigSchema
 
-logger = get_logger("QQ Adapter")
+logger = get_logger("qq_adapter")
 
 
 RECONNECT_DELAY = 30  # seconds

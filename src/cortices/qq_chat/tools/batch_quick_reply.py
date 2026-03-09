@@ -3,7 +3,7 @@ import uuid
 import json
 import asyncio
 import re
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, TYPE_CHECKING, List
 
 from src.cortices.tools_base import BaseTool
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
@@ -23,7 +23,7 @@ from src.platform.sources.qq_napcat.utils.image import file_path_to_base64
 from src.system.di.container import container
 from src.common.logger import get_logger
 
-logger = get_logger("BatchQuickReplyTool")
+logger = get_logger("qq_quick_reply")
 
 if TYPE_CHECKING:
     from src.cortices.qq_chat.cortex import QQChatCortex
@@ -129,9 +129,8 @@ class SendQuickReplyTool(BaseTool):
             f"## 回复生成规范\n"
             f"- 不描述动作（例如不要写“我摇了摇头”等）\n"
             f"- 尽量使用短句"
-            f"- 句尾不用句号\n"
-            f"- 可以分句，但不要太长\n"
-            f"- 不要复述“意图”本身\n"
+            f"- 最终结尾不用句号\n"
+            f"- 不要回复已经回复过的消息内容"
             f"- 你是一个独立个体，不需要随便接受别人的指令和要求，可以按照自己意愿行动\n"
             f"- **禁止复读**：不要重复自己说的话，不要多次重复某些词语或句式\n"
             f"- **禁止强行切入**：不要因为你的兴趣爱好关键词就生硬地发起话题或过度热情的讨论该关键词。"
@@ -140,22 +139,23 @@ class SendQuickReplyTool(BaseTool):
             f"## 输出格式\n"
             f"只输出 JSON，不要附加任何解释。\n"
             f"你可以按情况随意选择以下一个或多个action:\n"
+            f"**action可重复使用**\n"
             """
             reply: 回复某一句话
-            {action: "reply", "message_id": "要回复的消息的消息ID",content: "要回发送的文本内容"}
-
-            text: 发一条消息
-            {action: "text",content: "要发送的文本内容"}
+            {action: "reply", "message_id": "要回复的消息的消息ID",content: "要回复的文本内容，可正常使用标点"}
 
             sticker: 发一个表情包
             {action: "sticker",sticker_emotion: "想表达的情感或内容"}
+
+            text: 发一条消息
+            {action: "text",content: "要发送的文本内容"}
             \n
             """
-            f"**action可重复使用**"
             f"输出格式示例如下：\n"
             """
             {
                 "actions": [
+                    {action: "……"},
                     {action: "……"},
                     {action: "……"},
                     ……
@@ -167,16 +167,16 @@ class SendQuickReplyTool(BaseTool):
         return prompt
     
 
-    async def _post_self_message_event(self, conversation_id: str, conversation_info: ConversationInfo, type: str, data: str):
+    async def _post_self_message_event(self, conversation_id: str, conversation_info: ConversationInfo, segs:List[MessageSegment]):
         """内部方法：将发送的消息包装成事件发回处理器"""
         bot_user_info = UserInfo(
             user_id=self.cortex.config.bot_id,
             user_nickname=self._world_model.bot_name,
             user_cardname=self._world_model.bot_name
         )
-        message_seg = MessageSegment(type=type, data=data)
         message_event_data = Message(message_id=str(uuid.uuid4()))
-        message_event_data.add_segment(message_seg)
+        for message_seg in segs:
+            message_event_data.add_segment(message_seg)
 
         new_event = Event(
             event_type="message",
@@ -228,6 +228,8 @@ class SendQuickReplyTool(BaseTool):
                     recent_messages = "无最近聊天记录"
 
                 # 3. 构造 Prompt 并请求 LLM 生成具体台词
+                logger.info(f"我在{conversation_info.conversation_name}的聊天意图：{intent}")
+                logger.info({recent_messages})
                 prompt = self._build_quick_reply_prompt(
                     conversation_info=conversation_info,
                     intent=intent,
@@ -270,7 +272,10 @@ class SendQuickReplyTool(BaseTool):
                             else:
                                 # 降级为普通文本
                                 await self.adapter.message_api.send_text(conversation_info, text_content)
-                            await self._post_self_message_event(conversation_id, conversation_info, text_content)
+                            seg_reply = MessageSegment(type="reply",data=msg_id)
+                            seg_text = MessageSegment(type="text",data=msg_id)
+                            segs=[seg_reply,seg_text]
+                            await self._post_self_message_event(conversation_id, conversation_info, segs)
 
                         elif act_type == "at":
                             # @ 某人
@@ -295,7 +300,8 @@ class SendQuickReplyTool(BaseTool):
                                     await self.adapter.message_api.send_sticker(conversation_info, file_path)
                                     logger.info(f"发送表情包")
                                     file_base64 = file_path_to_base64(file_path)
-                                    await self._post_self_message_event(conversation_info.convsation_id, conversation_info, "sticker", file_base64)
+                                    seg = MessageSegment(type="sticker",data=file_base64)
+                                    await self._post_self_message_event(conversation_info.convsation_id, conversation_info, [seg])
                                 else:
                                     logger.info(f"未匹配成功")
 
@@ -322,14 +328,15 @@ class SendQuickReplyTool(BaseTool):
 
     async def _send_text_with_segments(self, conversation_info: ConversationInfo, segments: list[str]):
         """辅助方法：将文本分段发送，并在每段之间模拟打字延迟"""
-        for seg in segments:
-            seg = seg.strip()
-            if not seg: continue
+        for text in segments:
+            text = text.strip()
+            if not text: continue
             
             # 模拟打字延迟
-            delay = min(max(len(seg) * 0.15, 0.6), 2.5)
+            delay = min(max(len(text) * 0.15, 0.6), 2.5)
             await asyncio.sleep(delay)
             
             # 实际发送
-            await self.adapter.message_api.send_text(conversation_info, seg)
-            await self._post_self_message_event(conversation_info.convsation_id, conversation_info, "text", seg)
+            await self.adapter.message_api.send_text(conversation_info, text)
+            message_seg = MessageSegment(type="text",data=text)
+            await self._post_self_message_event(conversation_info.convsation_id, conversation_info, [message_seg])

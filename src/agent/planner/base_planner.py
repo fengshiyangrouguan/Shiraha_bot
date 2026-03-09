@@ -122,9 +122,8 @@ class BasePlanner(ABC):
             )
 
             # ----------- 打印成功日志 ---------------
-            self.logger.info("规划生成成功：")
-            self.logger.info(f"  - 思考过程: {result.thought}")
-            self.logger.info(f"  - 计划行动: 调用工具 '{result.tool_name}' 参数: {result.parameters}")
+            self.logger.info(f"思考过程: {result.thought}")
+            self.logger.info(f"计划行动: 调用工具 '{result.tool_name}' 参数: {result.parameters}")
 
             return result
 

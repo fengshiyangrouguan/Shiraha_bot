@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from src.cortices.manager import CortexManager
 
 
-logger = get_logger("BaseCortex")
+logger = get_logger("cortex")
 
 class BaseCortex(ABC):
     """

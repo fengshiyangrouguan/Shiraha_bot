@@ -7,6 +7,9 @@ from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
 # 导入配置
 from src.system.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
+from src.common.logger import get_logger
+
+logger = get_logger("world_model")
 
 class WorldModel:
     """
@@ -82,7 +85,7 @@ class WorldModel:
             data (BaseModel): 要保存的数据对象（Pydantic BaseModel）。
         """
         self.cortex_data[key] = data
-        print(f"WorldModel: Cortex数据 '{key}' 已更新（内存中）。")
+        logger.debug(f"上下文数据 '{key}' 已更新（内存中）。")
 
 
     def add_memory(self, action_summary: str):
@@ -91,23 +94,17 @@ class WorldModel:
             return
         memory_entry = f"[{time.strftime('%H:%M:%S')}] {action_summary}"
         self.short_term_memory.append(memory_entry)
-        print(self.short_term_memory)
-        print(f"WorldModel: 短期记忆已添加 - '{memory_entry}'")
+        logger.info(f"短期记忆已添加 - '{memory_entry}'")
 
-    def update_stimuli(self, notification: Optional[str] = None, alert: Optional[str] = None):
-        """由外部服务调用，用于更新外部世界的刺激物。"""
-        if notification:
-            self.notifications.append(notification)
-            print(f"WorldModel: 收到新通知 - '{notification}'")
-        if alert:
-            self.alerts.append(alert)
-            print(f"WorldModel: 收到新警报 - '{alert}'")
+    def update_notification(self, notification: Optional[str] = None, type: Optional[str] = None):
+        self.notifications[type]=notification
+        logger.info(f"收到新通知 - '{notification}'")
 
     def update_internal_state(self, mood: Optional[str] = None, energy_delta: Optional[int] = None):
         """更新 Agent 的内在状态。"""
         if mood:
             self.mood = mood
-            print(f"WorldModel: 情绪更新为 -> {mood}")
+            logger.info(f"情绪更新为 -> {mood}")
         if energy_delta:
             self.energy = max(0, min(100, self.energy + energy_delta)) # 确保精力在0-100之间
             print(f"WorldModel: 精力变化 {energy_delta} -> 当前精力: {self.energy}")

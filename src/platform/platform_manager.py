@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 from src.common.logger import get_logger
 from .platform_base import BasePlatformAdapter, PostMethod
 from src.system.di.container import container # 用于解析依赖，例如 EventManager 的 post_method
-logger = get_logger("platform manager")
+logger = get_logger("platform_manager")
 
 
 class PlatformManager:
@@ -43,7 +43,7 @@ class PlatformManager:
         if self._registered_adapter_types: # 避免重复初始化
             return
 
-        logger.info("PlatformManager: 扫描并注册平台适配器类型...")
+        logger.info("扫描并注册平台适配器类型...")
         sources_base_path = Path(os.path.dirname(os.path.abspath(__file__))) / "sources"
 
         for platform_dir in sources_base_path.iterdir():
@@ -148,14 +148,14 @@ class PlatformManager:
         )
         
         try:
-            logger.info(f"PlatformManager: 正在启动适配器 '{adapter_id}' ({platform_type})...")
+            logger.info(f"正在启动适配器 '{adapter_id}' ({platform_type})...")
             task = adapter_instance.run()
             self._active_adapters[adapter_id] = adapter_instance
             self._adapter_tasks[adapter_id] = task
-            logger.info(f"PlatformManager: 适配器 '{adapter_id}' 已成功启动。")
+            logger.info(f"适配器 '{adapter_id}' 已成功启动。")
             return adapter_instance
         except Exception as e:
-            logger.error(f"PlatformManager: 启动适配器 '{adapter_id}' 失败: {e}", exc_info=True)
+            logger.error(f"启动适配器 '{adapter_id}' 失败: {e}", exc_info=True)
             raise
 
     async def shutdown_adapter(self, adapter_id: str):
@@ -172,7 +172,7 @@ class PlatformManager:
         if not adapter:
             raise ValueError(f"未找到 ID 为 '{adapter_id}' 的活跃适配器。")
         
-        logger.info(f"PlatformManager: 正在停止适配器 '{adapter_id}'...")
+        logger.info(f"正在停止适配器 '{adapter_id}'...")
         try:
             await adapter.terminate()
             task = self._adapter_tasks.get(adapter_id)

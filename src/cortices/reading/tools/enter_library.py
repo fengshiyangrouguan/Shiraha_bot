@@ -5,9 +5,12 @@ from src.agent.world_model import WorldModel
 from src.cortices.reading.reading_data import ReadingData,Book
 from datetime import datetime
 from src.llm_api.factory import LLMRequestFactory
+from src.common.logger import get_logger
 
 if TYPE_CHECKING:
     from src.cortices.manager import CortexManager
+
+logger = get_logger("reading")
 
 class EnterLibraryTool(BaseTool):
     """
@@ -118,7 +121,7 @@ class EnterLibraryTool(BaseTool):
         try:
             return json.loads(s=content.strip().replace("```json", "").replace("```", ""))
         except:
-            return {"decision": "exit", "reason": "思维断片了，先离开书架。"}
+            return {"decision": "exit", "reason": "我思维突然断片了，打算先离开书架。"}
 
     async def execute(self, objective: str) -> str:
         # 先清空新书上架通知
@@ -127,6 +130,8 @@ class EnterLibraryTool(BaseTool):
         decision = await self._run_decide_planner(objective, library_str)
         
         if decision.get("decision") == "tool_call":
+            thought = decision.get("thought")
+            logger.info(thought)
             tool_name = decision.get("tool_name")
             params = decision.get("parameters", {})
             # 执行具体的阅读动作（如 start_read_chunk）
@@ -136,5 +141,5 @@ class EnterLibraryTool(BaseTool):
             except Exception as e:
                 return f"在执行 '{tool_name}' 时出错: {e}"
 
-        
-        return f"决定离开书架。原因：{decision.get('reason', '无')}"
+        logger.info(f"决定离开书架。原因是{decision.get('reason', '无')}")
+        return f"{decision.get('reason', '无')}"

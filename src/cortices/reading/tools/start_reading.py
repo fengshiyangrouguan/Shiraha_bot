@@ -9,7 +9,7 @@ from src.common.database.database_manager import DatabaseManager
 from src.common.logger import get_logger
 from collections import deque
 
-logger = get_logger("Reading")
+logger = get_logger("reading")
 
 if TYPE_CHECKING:
     from src.cortices.manager import CortexManager
@@ -107,13 +107,12 @@ class StratReadingTool(BaseTool):
                 await self.world_model.save_cortex_data("reading_data", reading_data)
                 await reading_data.update_book_progress_to_db(self.db_manager)
                 final_summary = await self.generate_reading_summary(book_title, reading_history)
-                logger.info(f"我结束了阅读《{book_title}》，因为{decision.get('exit_reason')},总结：{final_summary}")
-                return f"我决定放下书本。因为{decision.get('exit_reason')}，阅读总结：{final_summary}"
+                logger.info(f"我结束了阅读《{book_title}》，因为{decision.get('next_motive')},{final_summary}")
+                return f"我决定放下书本。因为{decision.get('next_motive')}，阅读总结：{final_summary}"
 
     async def _run_reading_planner(self, book: Book, chunk: str, history: list,motive: str) -> Dict[str, Any]:
         """内部决策器：专注于阅读理解和动机转化"""
         context = self.world_model.get_context_for_motive()
-        print(f"{context['notifications']}")
         prompt = f"""
 你叫 {context['bot_name']}，
 你是 {context['bot_identity']}。
@@ -181,11 +180,11 @@ class StratReadingTool(BaseTool):
     以下是你刚才随手记下的读书笔记：
     {reflections_text}
 
-    请将这些零散的笔记整合，写一段 200 字以内的“读后感”。
+    请将这些零散的笔记整合，进行200字左右总结。
     要求：
-    1. 保持第一人称，像是在自言自语。
-    2. 重点在于：这次阅读带给了你什么启发。
-    3. 语气要自然，不要有翻译腔。
+    1. 保持第一人称，想象你刚刚合上书，正撑着下巴自言自语
+    2. 保留笔记中的行文风格
+    3. 语气要自然，总结即可，不要出现“这让我意识到”、“综上所述”等生硬词汇。不需要上升太多思想高度，,不要使用换行
     """
         # 使用较小的 planner 或专用的 summary 模型
         llm_request = self.llm_request_factory.get_request("utils_small")

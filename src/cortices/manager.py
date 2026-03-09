@@ -15,7 +15,7 @@ from src.cortices.cortex_config_loader import load_cortex_config
 from pydantic import BaseModel, ValidationError
 
 CORTEX_MANIFEST_FILE = "manifest.json"
-logger = get_logger("CortexManager")
+logger = get_logger("cortex")
 
 class CortexManager:
     """

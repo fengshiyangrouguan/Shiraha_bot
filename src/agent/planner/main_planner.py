@@ -15,7 +15,7 @@ class MainPlanner(BasePlanner):
     它声明自己需要一个 `motive` 字符串作为输入。
     """
     def __init__(self):
-        super().__init__(task_name="main_planner", logger_name="MainPlanner")
+        super().__init__(task_name="main_planner", logger_name="main_planner")
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
 
     async def plan(self, motive:str, previous_observation:str = None) -> List[Dict[str, Any]]:

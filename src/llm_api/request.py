@@ -6,7 +6,8 @@ from typing import List, Dict, Optional, Any, Tuple, Set
 from src.system.di.container import container
 from src.common.config.schemas.llm_api_config import ModelConfig
 from src.common.config.schemas.llm_api_config import LLMApiConfig
-
+from src.common.logger import get_logger
+logger = get_logger("LLM_api")
 
 # 导入客户端注册表和我们新的标准异常
 from .model_client.base_client import client_registry
@@ -24,7 +25,7 @@ class LLMRequest:
         try:
             self.task_config = llm_config.model_task_config[task_name]
         except KeyError:
-            print(f"警告：任务 '{task_name}' 配置未在 llm_api_config.toml 中找到，将使用 'default' 任务配置。")
+            logger.warning(f"警告：任务 '{task_name}' 配置未在 llm_api_config.toml 中找到，将使用 'default' 任务配置。")
             self.task_config = llm_config.model_task_config["default"]
 
         self.model_pool: Dict[str, ModelConfig] = {}
@@ -33,7 +34,7 @@ class LLMRequest:
             if found:
                 self.model_pool[model_name] = found
             else:
-                print(f"警告：任务 '{task_name}' 配置的模型 '{model_name}' 在全局模型中未定义，已忽略。")
+                logger.warning(f"警告：任务 '{task_name}' 配置的模型 '{model_name}' 在全局模型中未定义，已忽略。")
 
         if not self.model_pool:
             raise ValueError(f"任务 '{task_name}' 的模型池为空，请检查配置。")
@@ -80,37 +81,37 @@ class LLMRequest:
                     **extra_kwargs
                 }
                 
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 正在尝试使用模型: {model_config.name} (任务: {self.task_name})...")
+                logger.debug(f"正在尝试使用模型: {model_config.name} (任务: {self.task_name})...")
                 self.model_states[model_config.name] = (self.model_states[model_config.name][0], time.time())
 
                 content = await client_method(**request_params)
                 
                 self.model_states[model_config.name] = (0, self.model_states[model_config.name][1])
-                print(f"模型 '{model_config.name}' 请求成功。")
+                logger.debug(f"模型 '{model_config.name}' 请求成功。")
                 return content, model_config.name
 
             except RespNotOkException as e:
                 last_exception = e
                 if 400 <= e.status_code < 500 and e.status_code != 429:
-                    print(f"模型 '{model_config.name}' 遇到客户端错误 (Code: {e.status_code})，终止所有尝试。错误: {e}")
+                    logger.error(f"模型 '{model_config.name}' 遇到客户端错误 (Code: {e.status_code})，终止所有尝试。错误: {e}")
                     break 
                 else:
-                    print(f"模型 '{model_config.name}' 遇到可切换的API错误 (Code: {e.status_code})，尝试下一个模型。")
+                    logger.error(f"模型 '{model_config.name}' 遇到可切换的API错误 (Code: {e.status_code})，尝试下一个模型。")
 
             except (NetworkConnectionError, EmptyResponseException) as e:
                 last_exception = e
-                print(f"模型 '{model_config.name}' 遇到问题，尝试下一个模型。错误: {e}")
+                logger.error(f"模型 '{model_config.name}' 遇到问题，尝试下一个模型。错误: {e}")
 
             except Exception as e:
                 last_exception = e
-                print(f"模型 '{model_config.name}' 遇到未知错误，尝试下一个模型。错误: {e}")
+                logger.error(f"模型 '{model_config.name}' 遇到未知错误，尝试下一个模型。错误: {e}")
 
             failure_count, last_used = self.model_states[model_config.name]
             self.model_states[model_config.name] = (failure_count + 1, last_used)
             failed_models.add(model_config.name)
         
         error_message = f"任务 '{self.task_name}' 的所有可用模型均已尝试失败。"
-        print(error_message)
+        logger.error(error_message)
         if last_exception:
             raise ModelAttemptFailed(error_message, original_exception=last_exception) from last_exception
         raise ModelAttemptFailed(error_message)

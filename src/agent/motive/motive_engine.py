@@ -6,7 +6,7 @@ from src.llm_api.factory import LLMRequestFactory
 from src.agent.world_model import WorldModel
 from src.system.di.container import container
 
-logger = get_logger("MotiveEngine")
+logger = get_logger("motive")
 
 class MotiveEngine:
     """
@@ -97,7 +97,6 @@ class MotiveEngine:
         """
         capability =self._format_capability_descriptions(collected_capability_descriptions)
         world_model = container.resolve(WorldModel)
-        logger.info(event="正在生成动机...")
         prompt_str = self._build_prompt(world_model,capability)
 
         try:
@@ -113,7 +112,7 @@ class MotiveEngine:
                 return motive
             else:
                 """ LLM 未返回内容，返回一个默认的休息动机 """
-                logger.warning("新的动机: LLM 未返回明确动机，选择休息一下。")
+                logger.warning("LLM 未返回明确动机，选择休息一下。")
                 world_model.motive = "休息一下"
                 return "休息一下"
 

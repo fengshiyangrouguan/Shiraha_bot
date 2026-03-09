@@ -8,7 +8,7 @@ from src.common.config.schemas.bot_config import BotConfig
 from src.system.main_system import MainSystem
 
 from src.common.logger import get_logger
-logger = get_logger("Application")
+logger = get_logger("main")
 
 async def main():
     """

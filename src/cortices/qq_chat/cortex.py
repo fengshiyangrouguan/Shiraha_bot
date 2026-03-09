@@ -19,7 +19,7 @@ from src.llm_api.factory import LLMRequestFactory
 from src.common.database.database_manager import DatabaseManager
 
 
-logger = get_logger("QQChatCortex")
+logger = get_logger("qq_chat")
 
 class QQChatCortex(BaseCortex):
     """
@@ -43,7 +43,7 @@ class QQChatCortex(BaseCortex):
         此方法设置并启动所有必需的组件。
         """
         await super().setup(world_model, config, cortex_manager)
-        logger.info(f"QQChatCortex: 正在启动...")
+        logger.info(f"正在启动...")
 
         self.llm_request_factory = container.resolve(LLMRequestFactory)
         self.database_manager = container.resolve(DatabaseManager)
@@ -59,15 +59,15 @@ class QQChatCortex(BaseCortex):
             self.adapter = await platform_manager.register_and_start(
                 adapter_config, self.event_processor.post_event_to_queue
             )
-            logger.info(f"QQChatCortex: 已启动并注册适配器: '{self.adapter.adapter_id}'")
+            logger.info(f"已启动并注册适配器: '{self.adapter.adapter_id}'")
 
         except Exception as e:
-            logger.error(f"QQChatCortex: 启动适配器 '{adapter_config.adapter_id}' 失败: {e}")
+            logger.error(f"启动适配器 '{adapter_config.adapter_id}' 失败: {e}")
 
         # 3. 启动事件处理器
         self._process_events_task = asyncio.create_task(self.event_processor.run())
 
-        logger.info(f"QQChatCortex: 启动完成。")
+        logger.info(f"启动完成。")
 
     async def post_event_to_processor(self, event: Event):
         """将一个事件（通常是出站事件）发送到事件处理器队列中进行持久化和状态更新。"""
@@ -78,7 +78,7 @@ class QQChatCortex(BaseCortex):
         关闭 QQ 聊天皮层。
         安全地停止适配器和事件处理任务。
         """
-        logger.info(f"QQChatCortex: 正在关闭...")
+        logger.info(f"正在关闭...")
         
         # 1. 停止事件处理任务
         if self._process_events_task:
@@ -86,7 +86,7 @@ class QQChatCortex(BaseCortex):
             try:
                 await self._process_events_task
             except asyncio.CancelledError:
-                logger.info(f"QQChatCortex: 事件处理任务已取消。")
+                logger.info(f"事件处理任务已取消。")
         
         # 2. 停止所有适配器
         platform_manager: PlatformManager = container.resolve(PlatformManager)
@@ -94,11 +94,11 @@ class QQChatCortex(BaseCortex):
             if self.adapter: # 适配器可能未成功启动
                 await platform_manager.shutdown_adapter(self.adapter.adapter_id)
                 del self.adapter
-                logger.info(f"QQChatCortex: 适配器 '{self.adapter.adapter_id}' 已停止。")
+                logger.info(f"适配器 '{self.adapter.adapter_id}' 已停止。")
         except Exception as e:
             if self.adapter:
-                logger.error(f"QQChatCortex: 停止适配器 '{self.adapter.adapter_id}' 失败: {e}")
+                logger.error(f"停止适配器 '{self.adapter.adapter_id}' 失败: {e}")
             else:
-                logger.error(f"QQChatCortex: 停止适配器失败，适配器未实例化: {e}")
+                logger.error(f"停止适配器失败，适配器未实例化: {e}")
     
-        logger.info(f"QQChatCortex: 已关闭。")
+        logger.info(f"已关闭。")

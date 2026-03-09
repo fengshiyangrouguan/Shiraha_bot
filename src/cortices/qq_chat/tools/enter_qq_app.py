@@ -10,6 +10,9 @@ from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.chat.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
 from src.llm_api.factory import LLMRequestFactory
+from src.common.logger import get_logger
+
+logger = get_logger("qq_chat")
 
 if TYPE_CHECKING:
     from src.cortices.manager import CortexManager
@@ -58,7 +61,7 @@ class EnterQQAppTool(BaseTool):
             sender_nickname = msg.user_nickname or "未知用户"
             timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(msg.time))
             content = msg.event_content or "[消息内容为空]"
-            line = f"    - [{timestamp_str}] {sender_cardname}({sender_nickname}): {content}"
+            line = f"    - [{timestamp_str}] {sender_nickname}: {content}"
             formatted_messages.append(line)
         return formatted_messages
 
@@ -161,14 +164,10 @@ class EnterQQAppTool(BaseTool):
 ---
 请严格按照以上JSON格式之一输出你的决策。
 """
-        print("===决策器的提示语如下===")
-        print(prompt)
         llm_factory = self.llm_request_factory
         llm_request = llm_factory.get_request("planner")
         content, model_name = await llm_request.execute(prompt=prompt)
         response = content.strip()
-        print("===决策器的原始输出如下===")
-        print(response)
         try:
             json_str = response.strip().replace("```json", "").replace("```", "")
             return json.loads(json_str)

@@ -3,9 +3,9 @@ from typing import Any, Dict, Callable, List, Union
 import asyncio
 import logging
 import json
+from src.common.logger import get_logger
 
-
-logger = logging.getLogger(__name__)
+logger = get_logger("qq_adapter")
 _send_websocket: Callable[[Dict], None]
 
 class NapcatCommandService:

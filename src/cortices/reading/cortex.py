@@ -16,7 +16,7 @@ from src.llm_api.factory import LLMRequestFactory
 # 定义书籍文件存放路径
 RAW_BOOKS_DIR = "data/book"
 REGISTERED_BOOKS_DIR = "data/book_registered"
-logger = get_logger("ReadingCortex")
+logger = get_logger("reading")
 
 class ReadingCortex(BaseCortex):
     """

@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import BookDB
 from time import time
+from src.common.logger import get_logger
 
+logger = get_logger("reading")
 class Book(BaseModel):
     """书籍模型"""
     book_title: str
@@ -79,6 +81,6 @@ class ReadingData(BaseModel):
             
             # 3. 提交更新
             await db_manager.upsert(db_book)
-            print(f"💾 数据库已更新: 《{self.current_reading_book.book_title}》 进度至 {self.current_reading_book.current_chunk_index}")
+            logger.info(f"更新《{self.current_reading_book.book_title}》 进度至 {self.current_reading_book.current_chunk_index}")
         else:
-            print(f"⚠️ 警告: 数据库中未找到书籍《{self.current_reading_book.book_title}》，无法保存进度。")
+            logger.warning(f"中未找到书籍《{self.current_reading_book.book_title}》，无法保存进度。")
