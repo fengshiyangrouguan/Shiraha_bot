@@ -85,10 +85,9 @@ class QQChatEventProcessor:
         await chat_stream.add_event(event)
 
         # 5. 将更新后的 QQChatData 和 上下文完整保存回 WorldModel
+        await self.world_model.save_cortex_data("qq_chat_data", self.qq_chat_data)
         unread_count = self.qq_chat_data.total_unread_count
         self.world_model.notifications["QQ聊天"] = f"收到未读消息 {unread_count} 条"
-        await self.world_model.save_cortex_data("qq_chat_data", self.qq_chat_data)
-
         logger.debug(f"QQChatData for stream ({chat_stream.stream_id}) 已更新并保存到 WorldModel。")
 
         # 6. 数据库永久化存储 (EventDB, UserInfoDB, ConversationInfoDB)

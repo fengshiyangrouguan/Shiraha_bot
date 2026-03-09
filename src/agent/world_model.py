@@ -20,7 +20,7 @@ class WorldModel:
     3. 动态外部感知 (External Perception: stimuli)
     4. 记忆 (Memory)
     """
-    def __init__(self, short_term_memory_max_len: int = 5):
+    def __init__(self, short_term_memory_max_len: int = 10):
         print("WorldModel: 初始化...")
         
         # --- 1. 加载静态身份 ---

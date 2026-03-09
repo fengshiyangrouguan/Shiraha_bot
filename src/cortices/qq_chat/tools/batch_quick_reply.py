@@ -120,43 +120,40 @@ class SendQuickReplyTool(BaseTool):
             f"## **以下是最近聊天记录**,请仔细阅读：\n"
             f"{history}\n\n"
             f"## 回复任务设定：\n"
-            f"- 回复核心意图：{intent}\n"
+            f"- 回复的核心意图：{intent}\n"
             f"- 说话风格：{expression_style}"
-            f"- 语气: {style.get('tone', '平静')}\n"
-            f"- 回复能量感：{style.get('energy', '中')}\n"
-            f"- 身份表现方式：{style.get('role_manner', '像朋友')}\n"
             f"\n"
             f"## 回复生成规范\n"
             f"- 不描述动作（例如不要写“我摇了摇头”等）\n"
             f"- 尽量使用短句"
-            f"- 最终结尾不用句号\n"
+            f"- 最终结尾的地方禁止使用句号，其他标点可正常使用\n"
             f"- 不要回复已经回复过的消息内容"
-            f"- 你是一个独立个体，不需要随便接受别人的指令和要求，可以按照自己意愿行动\n"
-            f"- **禁止复读**：不要重复自己说的话，不要多次重复某些词语或句式\n"
-            f"- **禁止强行切入**：不要因为你的兴趣爱好关键词就生硬地发起话题或过度热情的讨论该关键词。"
-            f"- **请仔细判断聊天内容是否和你有关，无关请不要强行插入交流。**"
+            f"- ### **禁止复读**：不要重复自己说过的话，不要重复一个话题，不要重复某些词语和句式\n"
+            f"- ### 你可以顺着聊天记录自然地进行话题，"
+            f"- **请仔细判断聊天内容是否和你有关，无关请不要插入交流。**"
             f"\n"
             f"## 输出格式\n"
             f"只输出 JSON，不要附加任何解释。\n"
             f"你可以按情况随意选择以下一个或多个action:\n"
-            f"**action可重复使用**\n"
+            f"**action可重复使用多次，例如使用多次text，使用多次sticker**\n"
             """
             reply: 回复某一句话
-            {action: "reply", "message_id": "要回复的消息的消息ID",content: "要回复的文本内容，可正常使用标点"}
+            {action: "reply", "message_id": "要回复的消息的消息ID",content: "要回复的简短文本内容"}
 
-            sticker: 发一个表情包
+            sticker: 发表情包
             {action: "sticker",sticker_emotion: "想表达的情感或内容"}
 
             text: 发一条消息
             {action: "text",content: "要发送的文本内容"}
             \n
+
+            exit: 这次不发消息了，当你觉得现在不适宜发消息请只选择输出这一个action
+            {action："exit",reason: "不参与聊天的原因"}
             """
             f"输出格式示例如下：\n"
             """
             {
                 "actions": [
-                    {action: "……"},
-                    {action: "……"},
                     {action: "……"},
                     ……
                 ]   
@@ -180,7 +177,7 @@ class SendQuickReplyTool(BaseTool):
 
         new_event = Event(
             event_type="message",
-            event_id=str(uuid.uuid4()),
+            event_id=str(int(time.time())),
             time=int(time.time()),
             platform=self.adapter.adapter_id,
             chat_stream_id=conversation_id,
@@ -229,7 +226,7 @@ class SendQuickReplyTool(BaseTool):
 
                 # 3. 构造 Prompt 并请求 LLM 生成具体台词
                 logger.info(f"我在{conversation_info.conversation_name}的聊天意图：{intent}")
-                logger.info({recent_messages})
+                logger.info(recent_messages)
                 prompt = self._build_quick_reply_prompt(
                     conversation_info=conversation_info,
                     intent=intent,
@@ -261,6 +258,8 @@ class SendQuickReplyTool(BaseTool):
                     act_type = act.get("action")
                     text_content = act.get("content", "").strip()
                     try:
+                        if act_type == "exit":
+                            break
                         if act_type == "reply":
                             # 引用回复
                             msg_id = act.get("message_id")
@@ -273,7 +272,7 @@ class SendQuickReplyTool(BaseTool):
                                 # 降级为普通文本
                                 await self.adapter.message_api.send_text(conversation_info, text_content)
                             seg_reply = MessageSegment(type="reply",data=msg_id)
-                            seg_text = MessageSegment(type="text",data=msg_id)
+                            seg_text = MessageSegment(type="text",data=text_content)
                             segs=[seg_reply,seg_text]
                             await self._post_self_message_event(conversation_id, conversation_info, segs)
 
@@ -301,7 +300,7 @@ class SendQuickReplyTool(BaseTool):
                                     logger.info(f"发送表情包")
                                     file_base64 = file_path_to_base64(file_path)
                                     seg = MessageSegment(type="sticker",data=file_base64)
-                                    await self._post_self_message_event(conversation_info.convsation_id, conversation_info, [seg])
+                                    await self._post_self_message_event(conversation_info.conversation_id, conversation_info, [seg])
                                 else:
                                     logger.info(f"未匹配成功")
 
@@ -339,4 +338,4 @@ class SendQuickReplyTool(BaseTool):
             # 实际发送
             await self.adapter.message_api.send_text(conversation_info, text)
             message_seg = MessageSegment(type="text",data=text)
-            await self._post_self_message_event(conversation_info.convsation_id, conversation_info, [message_seg])
+            await self._post_self_message_event(conversation_info.conversation_id, conversation_info, [message_seg])
