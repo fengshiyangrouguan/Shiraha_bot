@@ -1,6 +1,8 @@
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
-from .component_info import ComponentInfo
+from .tool_info import ToolInfo
+
+
 @dataclass
 class PythonDependency:
     """Python包依赖信息"""
@@ -22,7 +24,6 @@ class PythonDependency:
         return self.install_name
 
 
-
 @dataclass
 class PluginInfo:
     """插件信息"""
@@ -34,13 +35,11 @@ class PluginInfo:
     author: str = ""  # 插件作者
     enabled: bool = True  # 是否启用
     is_built_in: bool = False  # 是否为内置插件
-    components: List[ComponentInfo] = field(default_factory=list)  # 包含的组件列表
+    tools: List[ToolInfo] = field(default_factory=list)  # 包含的组件列表
     dependencies: List[str] = field(default_factory=list)  # 依赖的其他插件
     python_dependencies: List[PythonDependency] = field(default_factory=list)  # Python包依赖
-    config_file: str = ""  # 配置文件路径
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
-    # 新增：manifest相关信息
-    manifest_data: Dict[str, Any] = field(default_factory=dict)  # manifest文件数据
+    # manifest相关信息
     license: str = ""  # 插件许可证
     homepage_url: str = ""  # 插件主页
     repository_url: str = ""  # 插件仓库地址
@@ -48,18 +47,17 @@ class PluginInfo:
     categories: List[str] = field(default_factory=list)  # 插件分类
     min_host_version: str = ""  # 最低主机版本要求
     max_host_version: str = ""  # 最高主机版本要求
-
+    # config相关
+    config_file_name: str = ""
     def __post_init__(self):
-        if self.components is None:
-            self.components = []
+        if self.tools is None:
+            self.tools = []
         if self.dependencies is None:
             self.dependencies = []
         if self.python_dependencies is None:
             self.python_dependencies = []
         if self.metadata is None:
             self.metadata = {}
-        if self.manifest_data is None:
-            self.manifest_data = {}
         if self.keywords is None:
             self.keywords = []
         if self.categories is None:
@@ -79,4 +77,3 @@ class PluginInfo:
     def get_pip_requirements(self) -> List[str]:
         """获取所有pip安装格式的依赖"""
         return [dep.get_pip_requirement() for dep in self.python_dependencies]
-

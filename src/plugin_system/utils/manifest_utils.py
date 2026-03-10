@@ -1,15 +1,209 @@
 """
 插件Manifest工具模块
 
-提供manifest文件的验证、生成和管理功能
+提供manifest文件的验证、管理功能
 """
-
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict
+import json
 from src.common.logger import get_logger
+from src.plugin_system.base.parameter_info import ToolParameter
+from src.plugin_system.base.tool_info import ToolInfo
+from src.plugin_system.base.plugin_info import PluginInfo, PythonDependency
 from src.utils.version_comparator import VersionComparator
 
 logger = get_logger("manifest_utils")
 
+
+class ManifestError(ValueError):
+    """插件 manifest 相关错误"""
+    pass
+
+
+class ManifestLoader:
+    """
+    插件 Manifest 加载器
+
+    负责：
+    - 读取 _manifest.json 文件
+    - 进行基础字段校验
+    - 将原始 manifest 数据解析为 PluginInfo（系统内部声明态对象）
+
+    """
+
+    def load_from_file(self, manifest_path: str | Path) -> PluginInfo:
+        """
+        从 _manifest.json 文件加载插件声明信息
+
+        Args:
+            manifest_path: manifest 文件路径
+
+        Returns:
+            PluginInfo: 解析后的插件声明对象
+        """
+        path = Path(manifest_path)
+
+        if not path.exists():
+            raise ManifestError(f"未找到 manifest 文件: {path}")
+
+        if path.suffix != ".json":
+            raise ManifestError(f"不支持的 manifest 格式: {path.suffix}")
+
+        logger.debug(f"正在加载插件 manifest: {path}")
+
+        with path.open("r", encoding="utf-8") as f:
+            raw_data = json.load(f)
+
+        if not isinstance(raw_data, dict):
+            raise ManifestError(f"manifest 顶层结构必须是对象（文件: {path}）")
+
+        return self._parse_manifest(raw_data, path)
+
+    # ==========================
+    # 内部解析逻辑
+    # ==========================
+
+    def _parse_manifest(self, raw: Dict[str, Any], path: Path) -> PluginInfo:
+        """
+        将原始 manifest 字典解析为 PluginInfo
+
+        Args:
+            raw: json 解析得到的原始字典
+            path: manifest 文件路径（用于错误提示）
+
+        Returns:
+            PluginInfo
+        """
+        try:
+            name = raw["name"]
+            description = raw["description"]
+        except KeyError as e:
+            raise ManifestError(f"manifest 缺少必填字段 {e}（文件: {path}）")
+
+        # 构建插件基础信息（声明态）
+        info = PluginInfo(
+            display_name=raw.get("display_name", name),
+            name=name,
+            description=description,
+            version=raw.get("version", "1.0.0"),
+            author=raw.get("author", ""),
+            enabled=raw.get("enabled", True),
+            is_built_in=raw.get("is_built_in", False),
+            metadata=raw.get("metadata", {}),
+            license=raw.get("license", ""),
+            homepage_url=raw.get("homepage_url", ""),
+            repository_url=raw.get("repository_url", ""),
+            keywords=raw.get("keywords", []),
+            categories=raw.get("categories", []),
+            min_host_version=raw.get("min_host_version", ""),
+            max_host_version=raw.get("max_host_version", ""),
+            config_file_name=raw.get("config_file_name", "config.toml"),
+        )
+
+        # --------------------------
+        # 插件依赖（其他插件）
+        # --------------------------
+
+        info.dependencies = raw.get("dependencies", [])
+
+        # --------------------------
+        # Python 包依赖声明
+        # --------------------------
+
+        for dep in raw.get("python_dependencies", []):
+            info.python_dependencies.append(
+                PythonDependency(
+                    package_name=dep["package"],
+                    version=dep.get("version", ""),
+                    optional=dep.get("optional", False),
+                    description=dep.get("description", ""),
+                    install_name=dep.get("install_name", ""),
+                )
+            )
+
+        # --------------------------
+        # 工具声明
+        # --------------------------
+
+        self._parse_tools(raw, info)
+
+        return info
+
+    # ==========================
+    # 工具解析
+    # ==========================
+
+    def _parse_tools(self, raw: Dict[str, Any], info: PluginInfo) -> None:
+        """
+        解析插件声明的工具信息（不加载实现）
+
+        manifest 示例：
+        tools = [{"name": "get_weather", "description": "...", "parameters": [...]}]
+
+        Args:
+            raw: 原始 manifest 数据
+            info: PluginInfo 对象（就地填充）
+        """
+        tools = raw.get("tools", [])
+
+        if not isinstance(tools, list):
+            raise ManifestError("tools 字段必须是数组")
+
+        for tool in tools:
+            if not isinstance(tool, dict):
+                raise ManifestError("tools 中的每一项都必须是对象")
+
+            name = tool.get("name")
+            description = tool.get("description", "")
+            parameters_raw = tool.get("parameters", [])
+
+            if not isinstance(name, str) or not name.strip():
+                raise ManifestError("tools[].name 必须是非空字符串")
+            if not isinstance(description, str):
+                raise ManifestError(f"tools[{name}].description 必须是字符串")
+            if not isinstance(parameters_raw, list):
+                raise ManifestError(f"tools[{name}].parameters 必须是数组")
+
+            parameters: list[ToolParameter] = []
+            for param in parameters_raw:
+                if not isinstance(param, dict):
+                    raise ManifestError(f"tools[{name}].parameters 中每一项都必须是对象")
+
+                param_name = param.get("name")
+                param_type = param.get("type")
+                param_description = param.get("description", "")
+                param_required = bool(param.get("required", False))
+                param_choices = param.get("choices")
+
+                if not isinstance(param_name, str) or not param_name.strip():
+                    raise ManifestError(f"tools[{name}].parameters[].name 必须是非空字符串")
+                if not isinstance(param_type, str) or not param_type.strip():
+                    raise ManifestError(f"tools[{name}].parameters[{param_name}].type 必须是非空字符串")
+                if not isinstance(param_description, str):
+                    raise ManifestError(f"tools[{name}].parameters[{param_name}].description 必须是字符串")
+                if param_choices is not None:
+                    if not isinstance(param_choices, list) or not all(isinstance(x, str) for x in param_choices):
+                        raise ManifestError(
+                            f"tools[{name}].parameters[{param_name}].choices 必须是字符串数组或 null"
+                        )
+
+                parameters.append(
+                    ToolParameter(
+                        name=param_name,
+                        type=param_type,
+                        description=param_description,
+                        required=param_required,
+                        choices=param_choices,
+                    )
+                )
+
+            info.tools.append(
+                ToolInfo(
+                    name=name,
+                    description=description,
+                    tool_parameters=parameters,
+                )
+            )
 
 class ManifestValidator:
     """Manifest文件验证器"""
@@ -138,21 +332,21 @@ class ManifestValidator:
         if "plugin_info" in manifest_data:
             plugin_info = manifest_data["plugin_info"]
             if isinstance(plugin_info, dict):
-                # 检查components数组
-                if "components" in plugin_info:
-                    components = plugin_info["components"]
-                    if not isinstance(components, list):
-                        self.validation_errors.append("plugin_info.components应为数组格式")
+                # 检查tools数组
+                if "tools" in plugin_info:
+                    tools = plugin_info["tools"]
+                    if not isinstance(tools, list):
+                        self.validation_errors.append("plugin_info.tools应为数组格式")
                     else:
-                        for i, component in enumerate(components):
-                            if not isinstance(component, dict):
-                                self.validation_errors.append(f"plugin_info.components[{i}]应为对象")
+                        for i, tool in enumerate(tools):
+                            if not isinstance(tool, dict):
+                                self.validation_errors.append(f"plugin_info.tools[{i}]应为对象")
                             else:
-                                # 检查组件必需字段
-                                for comp_field in ["type", "name", "description"]:
-                                    if comp_field not in component or not component[comp_field]:
+                                # 检查工具必需字段（不再要求 type）
+                                for tool_field in ["name", "description"]:
+                                    if tool_field not in tool or not tool[tool_field]:
                                         self.validation_errors.append(
-                                            f"plugin_info.components[{i}]缺少必需字段: {comp_field}"
+                                            f"plugin_info.tools[{i}]缺少必需字段: {tool_field}"
                                         )
             else:
                 self.validation_errors.append("plugin_info应为对象格式")
@@ -173,151 +367,3 @@ class ManifestValidator:
             report.append("✅ Manifest文件验证通过")
 
         return "\n".join(report)
-
-
-# class ManifestGenerator:
-#     """Manifest文件生成器"""
-
-#     def __init__(self):
-#         self.template = {
-#             "manifest_version": 1,
-#             "name": "",
-#             "version": "1.0.0",
-#             "description": "",
-#             "author": {"name": "", "url": ""},
-#             "license": "MIT",
-#             "host_application": {"min_version": "1.0.0", "max_version": "4.0.0"},
-#             "homepage_url": "",
-#             "repository_url": "",
-#             "keywords": [],
-#             "categories": [],
-#             "default_locale": "zh-CN",
-#             "locales_path": "_locales",
-#         }
-
-#     def generate_from_plugin(self, plugin_instance: BasePlugin) -> Dict[str, Any]:
-#         """从插件实例生成manifest
-
-#         Args:
-#             plugin_instance: BasePlugin实例
-
-#         Returns:
-#             Dict[str, Any]: 生成的manifest数据
-#         """
-#         manifest = self.template.copy()
-
-#         # 基本信息
-#         manifest["name"] = plugin_instance.plugin_name
-#         manifest["version"] = plugin_instance.plugin_version
-#         manifest["description"] = plugin_instance.plugin_description
-
-#         # 作者信息
-#         if plugin_instance.plugin_author:
-#             manifest["author"]["name"] = plugin_instance.plugin_author
-
-#         # 组件信息
-#         components = []
-#         plugin_components = plugin_instance.get_plugin_components()
-
-#         for component_info, component_class in plugin_components:
-#             component_data: Dict[str, Any] = {
-#                 "type": component_info.component_type.value,
-#                 "name": component_info.name,
-#                 "description": component_info.description,
-#             }
-
-#             # 添加激活模式信息（对于Action组件）
-#             if hasattr(component_class, "focus_activation_type"):
-#                 activation_modes = []
-#                 if hasattr(component_class, "focus_activation_type"):
-#                     activation_modes.append(component_class.focus_activation_type.value)
-#                 if hasattr(component_class, "normal_activation_type"):
-#                     activation_modes.append(component_class.normal_activation_type.value)
-#                 component_data["activation_modes"] = list(set(activation_modes))
-
-#             # 添加关键词信息
-#             if hasattr(component_class, "activation_keywords"):
-#                 keywords = getattr(component_class, "activation_keywords", [])
-#                 if keywords:
-#                     component_data["keywords"] = keywords
-
-#             components.append(component_data)
-
-#         manifest["plugin_info"] = {"is_built_in": True, "plugin_type": "general", "components": components}
-
-#         return manifest
-
-#     def save_manifest(self, manifest_data: Dict[str, Any], plugin_dir: str) -> bool:
-#         """保存manifest文件
-
-#         Args:
-#             manifest_data: manifest数据
-#             plugin_dir: 插件目录
-
-#         Returns:
-#             bool: 是否保存成功
-#         """
-#         try:
-#             manifest_path = os.path.join(plugin_dir, "_manifest.json")
-#             with open(manifest_path, "w", encoding="utf-8") as f:
-#                 json.dump(manifest_data, f, ensure_ascii=False, indent=2)
-#             logger.info(f"Manifest文件已保存: {manifest_path}")
-#             return True
-#         except Exception as e:
-#             logger.error(f"保存manifest文件失败: {e}")
-#             return False
-
-
-# def validate_plugin_manifest(plugin_dir: str) -> bool:
-#     """验证插件目录中的manifest文件
-
-#     Args:
-#         plugin_dir: 插件目录路径
-
-#     Returns:
-#         bool: 是否验证通过
-#     """
-#     manifest_path = os.path.join(plugin_dir, "_manifest.json")
-
-#     if not os.path.exists(manifest_path):
-#         logger.warning(f"未找到manifest文件: {manifest_path}")
-#         return False
-
-#     try:
-#         with open(manifest_path, "r", encoding="utf-8") as f:
-#             manifest_data = json.load(f)
-
-#         validator = ManifestValidator()
-#         is_valid = validator.validate_manifest(manifest_data)
-
-#         logger.info(f"Manifest验证结果:\n{validator.get_validation_report()}")
-
-#         return is_valid
-
-#     except Exception as e:
-#         logger.error(f"读取或验证manifest文件失败: {e}")
-#         return False
-
-
-# def generate_plugin_manifest(plugin_instance: BasePlugin, save_to_file: bool = True) -> Optional[Dict[str, Any]]:
-#     """为插件生成manifest文件
-
-#     Args:
-#         plugin_instance: BasePlugin实例
-#         save_to_file: 是否保存到文件
-
-#     Returns:
-#         Optional[Dict[str, Any]]: 生成的manifest数据
-#     """
-#     try:
-#         generator = ManifestGenerator()
-#         manifest_data = generator.generate_from_plugin(plugin_instance)
-
-#         if save_to_file and plugin_instance.plugin_dir:
-#             generator.save_manifest(manifest_data, plugin_instance.plugin_dir)
-
-#         return manifest_data
-
-#     except Exception as e:
-#         logger.error(f"生成manifest文件失败: {e}")
-#         return None

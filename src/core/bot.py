@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 import logging
 
@@ -16,8 +17,11 @@ class MainSystem:
     def __init__(self):
         self.replyer = Replyer()
         self.plugin_manager = PluginManager()
-        self.plugin_manager.load_plugins()  # 调用此方法来实际加载插件
         self.plugin_planner = Planner(self.plugin_manager)
+
+        plugin_root = Path(__file__).resolve().parent.parent / "plugins"
+        self.plugin_planner.initialize_plugins(plugin_root)
+
         logger.info("MainSystem 已启动，并创建了 Replyer 实例。")
 
     async def handle_message(self, stream_id: str, user_id: str, message_content: str) -> Optional[str]:

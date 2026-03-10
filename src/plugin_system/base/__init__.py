@@ -6,15 +6,9 @@
 
 from .base_plugin import BasePlugin
 from .base_tool import BaseTool
-from .component_info import (
-    ComponentType,
-    ActionActivationType,
+from .tool_info import (
     ChatMode,
-    ComponentInfo,
-    ActionInfo,
-    CommandInfo,
     ToolInfo,
-    EventHandlerInfo,
     EventType,
 )
 from .config_types import ConfigField
@@ -22,16 +16,10 @@ from .plugin_info import PluginInfo,PythonDependency
 __all__ = [
     "BasePlugin",
     "BaseTool",
-    "ComponentType",
-    "ActionActivationType",
     "ChatMode",
-    "ComponentInfo",
-    "ActionInfo",
-    "CommandInfo",
     "ToolInfo",
     "PluginInfo",
     "PythonDependency",
     "ConfigField",
-    "EventHandlerInfo",
     "EventType",
 ]

@@ -1,0 +1,28 @@
+{
+  "plugin": {
+    "$description": "插件基础信息",
+    "name": {
+      "type": "string",
+      "default": "weather_plugin",
+      "description": "插件名称"
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0.0",
+      "description": "插件版本"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用插件"
+    }
+  },
+  "time": {
+    "$description": "时间显示相关设置",
+    "format": {
+      "type": "string",
+      "default": "%Y-%m-%d %H:%M:%S",
+      "description": "时间显示格式"
+    }
+  }
+}

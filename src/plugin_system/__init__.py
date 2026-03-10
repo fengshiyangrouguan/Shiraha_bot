@@ -9,16 +9,10 @@ from .base import (
     BasePlugin,
     BaseTool,
     ConfigField,
-    ComponentType,
-    ActionActivationType,
     ChatMode,
-    ComponentInfo,
-    ActionInfo,
-    CommandInfo,
     PluginInfo,
     ToolInfo,
     PythonDependency,
-    EventHandlerInfo,
     EventType,
 )
 
@@ -33,16 +27,10 @@ __all__ = [
     "BasePlugin",
     "BaseTool",
     # 类型定义
-    "ComponentType",
-    "ActionActivationType",
     "ChatMode",
-    "ComponentInfo",
-    "ActionInfo",
-    "CommandInfo",
     "PluginInfo",
     "ToolInfo",
     "PythonDependency",
-    "EventHandlerInfo",
     "EventType",
     # 装饰器
     "ConfigField",
