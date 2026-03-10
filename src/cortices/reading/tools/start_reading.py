@@ -176,6 +176,7 @@ class StratReadingTool(BaseTool):
         reflections_text = "\n".join(raw_reflections)
         
         prompt = f"""
+    你是一个总结器：
     你刚刚读完了《{book_title}》的几个片段。
     以下是你刚才随手记下的读书笔记：
     {reflections_text}
@@ -184,7 +185,7 @@ class StratReadingTool(BaseTool):
     要求：
     1. 保持第一人称，想象你刚刚合上书，正撑着下巴自言自语
     2. 保留笔记中的行文风格
-    3. 语气要自然，总结即可，不要出现“这让我意识到”、“综上所述”等生硬词汇。不需要上升太多思想高度，,不要使用换行
+    3. 语气要自然，只对原文进行压缩，不添加任何原文没有的新的内容和感想，不要换行
     """
         # 使用较小的 planner 或专用的 summary 模型
         llm_request = self.llm_request_factory.get_request("utils_small")

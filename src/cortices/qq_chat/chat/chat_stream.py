@@ -139,7 +139,7 @@ class QQChatStream(BaseModel):
         """
         self.unread_count = 0
 
-    def build_chat_history_for_llm(self, separator: str = "\n") -> str:
+    def build_chat_history_for_summary(self, separator: str = "\n") -> str:
         """
         根据 llm_context 列表构建一个用于 LLM 输入的格式化聊天历史字符串。
 
@@ -155,7 +155,6 @@ class QQChatStream(BaseModel):
         for i, msg in enumerate(self.llm_context):
             
             # 确定发送者名称：优先使用名片，其次是昵称，最后使用用户 ID
-            sender_cardname = msg.user_cardname or "未知用户"
             sender_nickname = msg.user_nickname or "未知用户"
             
             # 格式化时间戳（可选，但通常有助于 LLM 理解顺序）

@@ -1,0 +1,121 @@
+import time
+import uuid
+import json
+import asyncio
+from typing import Dict, Any, Optional, TYPE_CHECKING, List
+
+from src.cortices.tools_base import BaseTool
+from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
+from src.agent.world_model import WorldModel
+from src.cortices.qq_chat.chat.qq_chat_data import QQChatData
+from src.common.event_model.info_data import ConversationInfo
+from src.llm_api.factory import LLMRequestFactory
+from src.common.database.database_manager import DatabaseManager
+from src.common.logger import get_logger
+
+logger = get_logger("qq_deep_chat")
+
+if TYPE_CHECKING:
+    from src.cortices.qq_chat.cortex import QQChatCortex
+    from src.cortices.manager import CortexManager
+
+class DeepChatTool(BaseTool):
+    """
+    深度对话工具：
+    用于处理需要高质量回复、逻辑推理或长篇讨论的会话。
+    """
+    def __init__(self, world_model: WorldModel, adapter: QQNapcatAdapter, cortex: "QQChatCortex", 
+                 cortex_manager: "CortexManager", llm_request_factory: "LLMRequestFactory", 
+                 database_manager: "DatabaseManager"):
+        super().__init__(cortex_manager)
+        self._world_model = world_model
+        self.adapter = adapter
+        self.cortex = cortex
+        self.llm_request_factory = llm_request_factory
+        self.database_manager = database_manager
+
+    @property
+    def scope(self) -> str:
+        return "qq_app"
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        return {
+            "name": "deep_chat",
+            "description": "对特定会话进行深度回复。适用于需要思考、长篇表达或复杂互动的场景。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conversation_id": {"type": "string", "description": "目标会话 ID"},
+                    "reason": {"type": "string", "description": "初始对话意图"},
+                    "focus_topic": {"type": "string", "description": "本次深度对话的核心议题"}
+                },
+                "required": ["conversation_id", "reason"]
+            }
+        }
+
+    def _build_prompt(self, conversation_info: ConversationInfo, history: str, focus: str):
+        """构造高质量深度回复 Prompt"""
+        name = self._world_model.bot_name
+        personality = self._world_model.bot_personality
+        mood = self._world_model.mood
+        style = self._world_model.bot_expression_style
+
+        return f"""
+## 深度对话模式
+你现在处于专注模式，正在与“{conversation_info.conversation_name}”讨论关键话题。
+
+## 你的设定
+- 名字：{name}
+- 性格：{personality}
+- 当前情绪：{mood}
+- 表达风格：{style}
+
+## 讨论焦点
+{focus if focus else "根据聊天记录自然延展"}
+
+## 聊天记录
+{history}
+
+## 任务要求
+1. 请提供深度、有见地且符合性格的回复。
+2. 允许长篇表达，但要保持口语自然，不要像论文。
+3. 如果对方提问，请给出逻辑严密的回答。
+4. **禁止回复动作描写**。结尾严禁使用句号。
+
+请直接输出你的回复内容：
+"""
+
+    async def execute(self, conversation_id: str, reason: str, focus_topic: str = "") -> str:
+        try:
+            # 1. 获取会话数据
+            qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
+            chat_stream = qq_chat_data.streams.get(conversation_id)
+            
+            if not chat_stream:
+                return f"深度对话失败：找不到会话 {conversation_id}"
+
+            conv_info = chat_stream.conversation_info
+            history = chat_stream.build_chat_history_has_msg_id()
+
+            # 2. 构造 Prompt
+            logger.info(f"进入深度对话模式 -> {conv_info.conversation_name}，理由: {reason}")
+            prompt = self._build_prompt(conv_info, history, focus_topic)
+
+            # 3. 使用性能更强的模型（此处假设 Pro 为大模型）
+            llm_request = self.llm_request_factory.get_request("planner") 
+            content, _ = await llm_request.execute(prompt=prompt)
+
+            # 4. 物理发送（深度回复通常不需要像快速回复那样分段延迟，但可以模拟思考）
+            await asyncio.sleep(2.0) 
+            await self.adapter.message_api.send_text(conv_info, content.strip())
+
+            # 5. 记录总结
+            summary = f"我决定深入参与“{conv_info.conversation_name}”的讨论，针对{focus_topic if focus_topic else '当前话题'}表达了看法。"
+            self._world_model.add_short_term_memory(summary)
+
+            return f"已成功完成对“{conv_info.conversation_name}”的深度回复。"
+
+        except Exception as e:
+            logger.error(f"DeepChat 执行崩溃: {e}")
+            return f"深度对话执行失败: {e}"

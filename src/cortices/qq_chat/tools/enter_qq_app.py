@@ -130,8 +130,7 @@ class EnterQQAppTool(BaseTool):
 2.**社交克制**：不要为了展示你的“兴趣爱好”而生硬地开启话题。不要刻意突出自身兴趣爱好，自然的融入聊天。
 3.**自然流露**：兴趣应该是你性格的底色，而不是你说话的模板。只有在氛围合适时才轻量提及，不要像复读兴趣标签的机器。
 4.**保持随性**：你没有义务回应每一句未读消息。如果话题不投机/不感兴趣/和你没有关系，你可以决定旁观不回复，或者也可以按照你的性格认知下的社交礼仪去决定怎么做。
-5.**拒绝指令感**：不要表现得被‘回复意图’锁死，如果意图让你显得太生硬，请用你自己的性格去化解它。
-6.不要单独对表情包进行回复
+6.不要对表情包进行回复
 
 
 ## 决策规则
@@ -163,7 +162,8 @@ class EnterQQAppTool(BaseTool):
 ```
 ---
 请严格按照以上JSON格式之一输出你的决策。
-"""
+"""     
+        print(prompt)
         llm_factory = self.llm_request_factory
         llm_request = llm_factory.get_request("planner")
         content, model_name = await llm_request.execute(prompt=prompt)
@@ -184,6 +184,7 @@ class EnterQQAppTool(BaseTool):
 
         decision = await self._run_decide_planner(objective, context_str)
         decision_type = decision.get("decision")
+        logger.info(f"原始决策：{decision}")
 
         if decision_type == "tool_call":
             tool_name = decision.get("tool_name")
@@ -194,19 +195,12 @@ class EnterQQAppTool(BaseTool):
             try:
                 # 直接执行工具调用
                 result = await self.cortex_manager.call_tool_by_name(tool_name, **parameters)
-                
-                # # 如果是发送消息，则标记为已读
-                # if tool_name == "send_quick_reply" and "stream_id" in parameters:
-                #     stream_id = parameters["stream_id"]
-                #     chat_stream = qq_chat_data.streams.get(stream_id)
-                #     if chat_stream:
-                #         chat_stream.mark_as_read()
-                #         await self.world_model.save_cortex_data("qq_chat_data", qq_chat_data)
-
                 return f"{result}"
             except Exception as e:
                 return f"在执行 '{tool_name}' 时出错: {e}"
-
+        elif decision_type == "exit":
+            if decision.get("reason"):
+                reason = decision.get("reason")
+                return reason
         else:
-            # 对于 'batch_reply', 'interactive_chat', 'exit' 等复杂决策, 返回JSON指令给上层处理
             return "不知道该干什么，退出QQ应用了。"
