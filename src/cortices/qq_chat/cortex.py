@@ -12,7 +12,7 @@ from .chat.event_processor import QQChatEventProcessor
 from src.cortices.manager import CortexManager
 from .chat.sticker_system.sticker_manager import StickerManager
 
-from src.system.di.container import container
+from src.common.di.container import container
 from src.platform.platform_manager import PlatformManager
 from src.platform.platform_base import BasePlatformAdapter
 from src.llm_api.factory import LLMRequestFactory

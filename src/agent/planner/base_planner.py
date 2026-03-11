@@ -2,7 +2,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
-from src.system.di.container import container
+from src.common.di.container import container
 from src.llm_api.factory import LLMRequestFactory
 from src.agent.world_model import WorldModel
 from src.common.logger import get_logger

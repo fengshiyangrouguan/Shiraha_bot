@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from src.common.logger import get_logger
 from src.llm_api.factory import LLMRequestFactory
 from src.agent.world_model import WorldModel
-from src.system.di.container import container
+from src.common.di.container import container
 
 logger = get_logger("motive")
 

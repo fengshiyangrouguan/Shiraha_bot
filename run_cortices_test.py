@@ -13,7 +13,7 @@ from src.agent.world_model import WorldModel
 from src.common.database.database_manager import DatabaseManager
 from src.platform.platform_manager import PlatformManager
 from src.cortices.manager import CortexManager
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.config.config_service import ConfigService
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.config.schemas.llm_api_config import LLMApiConfig

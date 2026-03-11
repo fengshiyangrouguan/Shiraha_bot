@@ -1,0 +1,35 @@
+{
+  "manifest_version": 1,
+  "name": "weather_plugin",
+  "display_name": "Weather示例插件",
+  "version": "3.0.0",
+  "description": "显示天气",
+  "author": {
+    "name": "zyb"
+  },
+  "enabled": true,
+  "is_built_in": false,
+  "config_file_name": "config.toml",
+  "tools": [
+    {
+      "name": "get_current_weather",
+      "description": "当用户询问某个地方的天气时，使用此工具。",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "description": "要查询天气的城市名称",
+          "required": true,
+          "choices": null
+        },
+        {
+          "name": "unit",
+          "type": "string",
+          "description": "温度单位（celsius/fahrenheit）",
+          "required": false,
+          "choices": ["celsius", "fahrenheit"]
+        }
+      ]
+    }
+  ]
+}

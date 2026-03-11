@@ -5,7 +5,7 @@ import asyncio
 from src.common.config.config_service import ConfigService
 from src.common.config.schemas.llm_api_config import LLMApiConfig
 from src.common.config.schemas.bot_config import BotConfig
-from src.system.main_system import MainSystem
+from src.main_system import MainSystem
 
 from src.common.logger import get_logger
 logger = get_logger("main")

@@ -6,7 +6,7 @@ from .base_planner import BasePlanner
 from src.llm_api.dto import LLMMessageBuilder
 from src.agent.world_model import WorldModel
 from src.cortices.manager import CortexManager
-from src.system.di.container import container
+from src.common.di.container import container
 
 class MainPlanner(BasePlanner):
     """

@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Deque, Optional, Type
 from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
 
 # 导入配置
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.logger import get_logger
 
@@ -57,6 +57,9 @@ class WorldModel:
 
         self.long_term_memory = None # 长期记忆占位符
 
+        # 心流缓存，缓存一些阅读，编程，等产生的感悟，形成侧回路，避免影响其他cortex
+        self.flow_cache:Deque[str] = deque(maxlen=15)
+
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """
         从 WorldModel 中获取指定键的 Cortex 数据。
@@ -95,6 +98,12 @@ class WorldModel:
         memory_entry = f"[{time.strftime('%H:%M:%S')}] {action_summary}"
         self.short_term_memory.append(memory_entry)
         logger.info(f"短期记忆已添加 - '{memory_entry}'")
+
+    def add_flow_cache(self,flow_summary:str):
+        cache = f"[{time.strftime('%H:%M:%S')}] {flow_summary}"
+        self.flow_cache.append(cache)
+        logger.info(f"灵感已添加 - '{flow_summary}'")
+
 
     def update_notification(self, notification: Optional[str] = None, type: Optional[str] = None):
         self.notifications[type]=notification

@@ -7,7 +7,7 @@ from src.common.logger import get_logger
 from src.common.event_model.event import Event
 from src.common.event_model.info_data import ConversationInfo
 
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import UserInfoDB, ConversationInfoDB, EventDB
 

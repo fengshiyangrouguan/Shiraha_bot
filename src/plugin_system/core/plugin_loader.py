@@ -3,8 +3,9 @@ from typing import Dict
 
 from src.plugin_system.base import PluginInfo
 from src.plugin_system.utils import ManifestLoader, ManifestError
-from src.utils.logger import logger
+from src.common.logger import get_logger
 
+logger = get_logger("plugin_system")
 
 class PluginLoader:
     """

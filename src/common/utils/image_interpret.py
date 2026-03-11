@@ -11,7 +11,7 @@ from PIL import Image
 import numpy as np
 import json
 from src.llm_api.factory import LLMRequestFactory
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import StickerDB
 from src.common.event_model.sticker import Sticker

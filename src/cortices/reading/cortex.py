@@ -6,7 +6,7 @@ from typing import Optional, TYPE_CHECKING,List
 
 from src.cortices.base_cortex import BaseCortex
 from src.cortices.reading.reading_data import ReadingData,Book
-from src.system.di.container import container
+from src.common.di.container import container
 from src.cortices.reading.utils.book_file_process import slice_and_tag_book,load_all_books,save_book_to_db
 from src.common.logger import get_logger
 from src.common.database.database_manager import DatabaseManager

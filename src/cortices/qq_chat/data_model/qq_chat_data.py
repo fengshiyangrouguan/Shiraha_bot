@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from .chat_stream import QQChatStream
 from src.common.event_model.info_data import ConversationInfo
 from src.common.database.database_manager import DatabaseManager
-from src.system.di.container import container
+from src.common.di.container import container
 
 class QQChatData(BaseModel):
     """

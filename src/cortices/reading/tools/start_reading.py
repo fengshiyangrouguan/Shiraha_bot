@@ -94,7 +94,7 @@ class StratReadingTool(BaseTool):
             reading_history_deque.append(reflection_entry)
 
             # 将感想存入短期记忆，影响白羽后续的动机
-            self.world_model.short_term_memory.append(f"我正在阅读《{book_title}》，{decision.get('summary')}，{decision.get('reflection')}")
+            self.world_model.add_flow_cache(f"我正在阅读《{book_title}》，{decision.get('summary')}，{decision.get('reflection')}")
             await reading_data.update_book_progress_to_db(self.db_manager)
             # 4. 判断下一步行动
             action = decision.get("action")
@@ -181,11 +181,11 @@ class StratReadingTool(BaseTool):
     以下是你刚才随手记下的读书笔记：
     {reflections_text}
 
-    请将这些零散的笔记整合，进行200字左右总结。
+    请将这些零散的笔记整合，进行200字左右的压缩总结。
     要求：
-    1. 保持第一人称，想象你刚刚合上书，正撑着下巴自言自语
+    1. 保持第一人称，以"我……"开头
     2. 保留笔记中的行文风格
-    3. 语气要自然，只对原文进行压缩，不添加任何原文没有的新的内容和感想，不要换行
+    3. 语气要自然，只对原文进行压缩精简，保留关键词，不添加任何原文没有的新的内容/词汇/感想，不换行
     """
         # 使用较小的 planner 或专用的 summary 模型
         llm_request = self.llm_request_factory.get_request("utils_small")

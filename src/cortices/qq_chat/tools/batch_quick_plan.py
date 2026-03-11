@@ -8,8 +8,8 @@ from typing import Dict, Any, Optional, TYPE_CHECKING, List
 from src.cortices.tools_base import BaseTool
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.agent.world_model import WorldModel
-from src.cortices.qq_chat.chat.qq_chat_data import QQChatData
-from src.cortices.qq_chat.chat.chat_stream import QQChatStream
+from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
+from src.cortices.qq_chat.data_model.chat_stream import QQChatStream
 from src.common.event_model.event import Event
 from src.common.event_model.event_data import Message, MessageSegment
 from src.common.event_model.info_data import UserInfo
@@ -18,7 +18,7 @@ from src.common.database.database_model import ConversationInfoDB, UserInfoDB
 from src.llm_api.dto import LLMMessageBuilder
 from src.llm_api.factory import LLMRequestFactory
 from src.common.database.database_manager import DatabaseManager
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.logger import get_logger
 from src.cortices.qq_chat.chat.replyer import QQReplyer
 from src.cortices.qq_chat.chat.deep_chat_planner import DeepChatPlanner

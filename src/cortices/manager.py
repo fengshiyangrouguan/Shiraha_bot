@@ -10,7 +10,7 @@ from src.llm_api.dto import ToolCall
 from src.cortices.base_cortex import BaseCortex
 from src.cortices.tools_base import BaseTool
 from src.agent.world_model import WorldModel
-from src.system.di.container import container
+from src.common.di.container import container
 from src.cortices.cortex_config_loader import load_cortex_config
 from pydantic import BaseModel, ValidationError
 

@@ -4,7 +4,7 @@ import logging
 from typing import Optional, List
 
 # 导入 DI 容器
-from .di.container import container
+from src.common.di.container import container
 
 # 导入核心服务和模块
 from src.common.logger import get_logger

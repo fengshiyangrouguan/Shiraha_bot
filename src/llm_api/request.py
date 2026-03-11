@@ -3,7 +3,7 @@ import time
 import base64
 from typing import List, Dict, Optional, Any, Tuple, Set
 
-from src.system.di.container import container
+from src.common.di.container import container
 from src.common.config.schemas.llm_api_config import ModelConfig
 from src.common.config.schemas.llm_api_config import LLMApiConfig
 from src.common.logger import get_logger

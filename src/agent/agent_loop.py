@@ -10,7 +10,7 @@ from src.agent.world_model import WorldModel
 from src.cortices.manager import CortexManager
 from src.agent.planner.planner_result import PlanResult
 from src.llm_api.factory import LLMRequestFactory
-from src.system.di.container import container
+from src.common.di.container import container
 from src.llm_api.dto import ToolCall
 
 logger = get_logger("agent_loop")
@@ -72,7 +72,7 @@ class AgentLoop:
 请你以第一人称视角，对上面的记忆，进行50字左右的总结，
 对动机，规划尽量简短，对行动结果偏详细
 要求保留原文中的行文、说话风格
-语气要自然，只对原文进行压缩，不添加任何原文没有的新的内容和感想，不要使用换行
+语气要自然，只对原文进行压缩，保留重要关键词，不添加任何原文没有的内容/词汇/感想，不换行
 """
         )
         response, model_name = await llm_request.execute(prompt)

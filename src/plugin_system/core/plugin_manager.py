@@ -6,7 +6,9 @@ from typing import Dict, Type, List, Tuple, Any
 from src.plugin_system.base import BasePlugin, BaseTool, ToolInfo, PluginInfo
 from src.plugin_system.base.parameter_info import ToolParameter
 from src.plugin_system.utils import PluginConfigManager
-from src.utils.logger import logger
+from src.common.logger import get_logger
+
+logger = get_logger("plugin_system")
 
 '''TODO:增加工具卸载功能，涉及调用插件的 on_unload 生命周期方法'''
 

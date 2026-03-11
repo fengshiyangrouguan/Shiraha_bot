@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.common.logger import get_logger
 from .platform_base import BasePlatformAdapter, PostMethod
-from src.system.di.container import container # 用于解析依赖，例如 EventManager 的 post_method
+from src.common.di.container import container # 用于解析依赖，例如 EventManager 的 post_method
 logger = get_logger("platform_manager")
 
 

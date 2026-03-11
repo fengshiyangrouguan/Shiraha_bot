@@ -7,7 +7,7 @@ from sqlmodel import select
 from src.common.database.database_model import ConversationInfoDB, EventDB
 from src.cortices.tools_base import BaseTool
 from src.agent.world_model import WorldModel
-from src.cortices.qq_chat.chat.qq_chat_data import QQChatData
+from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
 from src.llm_api.factory import LLMRequestFactory
 from src.common.logger import get_logger
@@ -106,7 +106,7 @@ class EnterQQAppTool(BaseTool):
         # 模仿 main_planner, 获取可用工具
         context = self.world_model.get_context_for_motive()
         available_tools = self.cortex_manager.get_tool_schemas(scope="qq_app")
-        short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self.world_model.short_term_memory)
+        short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self.world_model.short_term_memory)
 
         prompt = f"""
 你叫 {context['bot_name']}。
@@ -117,7 +117,7 @@ class EnterQQAppTool(BaseTool):
 现在是 {context['time']}。
 此刻你的心理状态是：{context['mood']}。
 
-你的近期活动：
+你的近期活动记忆：
 {short_term_memory}
         
 现在你正在qq软件中浏览会话列表，正在规划下一步行动。
