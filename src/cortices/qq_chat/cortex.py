@@ -11,6 +11,7 @@ from .config.config_schema import CortexConfigSchema
 from .chat.event_processor import QQChatEventProcessor
 from src.cortices.manager import CortexManager
 from .chat.sticker_system.sticker_manager import StickerManager
+from src.extensions.social_damper import SocialDamper
 
 from src.common.di.container import container
 from src.platform.platform_manager import PlatformManager
@@ -35,6 +36,7 @@ class QQChatCortex(BaseCortex):
         self.llm_request_factory: Optional[LLMRequestFactory] = None
         self.database_manager: Optional[DatabaseManager] = None
         self.sticker_manager: Optional[StickerManager] = None
+        self.social_damper: Optional[SocialDamper] = None
 
 
     async def setup(self, world_model: WorldModel, config: CortexConfigSchema, cortex_manager: CortexManager):
@@ -52,7 +54,11 @@ class QQChatCortex(BaseCortex):
 
         self.sticker_manager = StickerManager(self.database_manager)
         await self.sticker_manager.start()
-        container.register_factory(StickerManager, lambda: self.sticker_manager)  # 将sticker_manager注册到DI容器中
+        self.social_damper = SocialDamper(self.llm_request_factory,self._world_model)
+
+        container.register_factory(StickerManager, lambda: self.sticker_manager)
+        container.register_factory(SocialDamper, lambda: self.social_damper)
+        
         adapter_config = self.config.adapter
 
         try:

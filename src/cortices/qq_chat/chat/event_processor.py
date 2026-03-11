@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional, List
 from src.common.logger import get_logger
 from src.agent.world_model import WorldModel
 from src.common.event_model.event import Event
-from .qq_chat_data import QQChatData
-from .chat_stream import QQChatStream # 确保 QQChatStream 导入正确
+from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
+from src.cortices.qq_chat.data_model.chat_stream import QQChatStream # 确保 QQChatStream 导入正确
 
 
 logger = get_logger("QQEventProcessor")

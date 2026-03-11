@@ -158,9 +158,7 @@ class DeepChatPlanner():
                         deep_chat_result = await self._summary_action(intent, act_result)
                         return deep_chat_result
                     
-                    result = f"我决定退出聊天，我聊天太久了，感觉需要去干点别的了"
-                    deep_chat_result = await self._summary_action(intent, act_result)
-                    return deep_chat_result
+
 
                 except Exception as e:
                     result=f"行动解析失败了，报错:{e}"
@@ -170,6 +168,10 @@ class DeepChatPlanner():
             except Exception as e:
                 logger.error(f"DeepChat 执行崩溃: {e}")
                 return f"深度对话执行失败: {e}"
+        
+        result = f"我决定退出聊天，我聊天太久了，感觉需要去干点别的了"
+        deep_chat_result = await self._summary_action(intent, act_result)
+        return deep_chat_result
             
     async def _summary_action(self, intent, act_result):
 

@@ -22,6 +22,7 @@ from src.common.di.container import container
 from src.common.logger import get_logger
 from src.cortices.qq_chat.chat.replyer import QQReplyer
 from src.cortices.qq_chat.chat.deep_chat_planner import DeepChatPlanner
+from src.extensions.social_damper import SocialDamper
 
 
 logger = get_logger("qq_chat")
@@ -45,6 +46,7 @@ class BatchQuickPlanTool(BaseTool):
         self.database_manager = database_manager
         self.replyer = QQReplyer(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex)
         self.deep_chat_planner = DeepChatPlanner(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex,replyer=self.replyer)
+        self.social_damper: SocialDamper = container.resolve(SocialDamper)
     @property
     def scope(self) -> str:
         return "qq_app"
@@ -73,7 +75,7 @@ class BatchQuickPlanTool(BaseTool):
         }
     
     
-    def _build_quick_plan_prompt(self, conversation_info: ConversationInfo, intent: str, style: Dict[str, Any], history:str):
+    async def _build_quick_plan_prompt(self, conversation_info: ConversationInfo, intent: str, style: Dict[str, Any], history:str):
         """
         构造用于轻量级回复生成的 Prompt。
         """
@@ -83,6 +85,14 @@ class BatchQuickPlanTool(BaseTool):
         mood = self._world_model.mood
         # plan_style = self._world_model.bot_plan_style
         short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self._world_model.short_term_memory) 
+        damper_result:dict = await self.social_damper.damp_intent(intent,history)
+        if damper_result["should_damp"]:
+            intent_final=f"原始动机在当前语境突兀，社交阻尼器已介入。新动机规划为“{damper_result["damped_intent"]}”"
+            logger.info(f"社交阻尼器介入修正动机：{damper_result["damped_intent"]}")
+        else:
+            intent_final=f"你当前的行动意图是：{intent}"
+
+
 
         if conversation_info.conversation_type == "group":
             chat_target = f"你正在群聊中与群友聊天。"
@@ -103,7 +113,7 @@ f"""
 {history}
 
 ## 待执行的社交规划
-你当前的行动意图是："{intent}"
+{intent_final}
 
 ## 可用的 Action 规范
 - **去重检查**：不要重复去执行你近期活动中已干过的事。
@@ -177,7 +187,7 @@ f"""
 
                 # 3. 构造 Prompt 并请求 LLM 生成具体台词
                 logger.info(f"我在{conversation_info.conversation_name}的聊天意图：{intent}")
-                prompt = self._build_quick_plan_prompt(
+                prompt = await self._build_quick_plan_prompt(
                     conversation_info=conversation_info,
                     intent=intent,
                     style=style,
