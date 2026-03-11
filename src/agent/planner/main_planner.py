@@ -78,15 +78,7 @@ class MainPlanner(BasePlanner):
         builder.add_system_message(system_prompt)
         builder.add_user_message(user_prompt)
         
-        prompt = builder.get_message_dict()
-        # print("===系统提示语===")
-        # print(system_prompt)
-        # print("===用户提示语===")
-        # print(user_prompt)
-        
+        prompt = builder.get_message_dict()        
         plan_result = await self.send_to_LLM(prompt)
         return plan_result
         
-    
-
-#            "你是一个高度智能的AI代理的“主规划器”。你的任务是接收一个高阶意图，并决定执行哪个工具来以最有效的方式推进这个意图。"

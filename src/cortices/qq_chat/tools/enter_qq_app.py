@@ -163,9 +163,9 @@ class EnterQQAppTool(BaseTool):
 ---
 请严格按照以上JSON格式之一输出你的决策。
 """     
-        print(prompt)
         llm_factory = self.llm_request_factory
         llm_request = llm_factory.get_request("planner")
+
         content, model_name = await llm_request.execute(prompt=prompt)
         response = content.strip()
         try:

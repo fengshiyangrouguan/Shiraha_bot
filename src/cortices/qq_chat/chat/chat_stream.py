@@ -191,7 +191,7 @@ class QQChatStream(BaseModel):
         for i, msg in enumerate(self.llm_context):
             if not msg.is_readed and not divider_inserted:
                 if history_lines:  # 确保前面有历史消息才加分割线
-                    history_lines.append("—— 以上为已回复历史消息，请勿回复 ——")
+                    history_lines.append("—— 以上为已回复历史消息，禁止回复 ——")
                 divider_inserted = True
 
             # 确定发送者名称：优先使用名片，其次是昵称，最后使用用户 ID
@@ -208,6 +208,11 @@ class QQChatStream(BaseModel):
             )
             history_lines.append(line)
             msg.is_readed = True
+
+        # 如果循环结束了依然没有插入过分割线，且历史记录不为空
+        # 说明所有消息都是已读的，直接在最后追加标识符
+        if not divider_inserted and history_lines:
+            history_lines.append("—— 以上为已回复历史消息，禁止回复 ——")
         
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)

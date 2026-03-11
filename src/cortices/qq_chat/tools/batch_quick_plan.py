@@ -20,7 +20,8 @@ from src.llm_api.factory import LLMRequestFactory
 from src.common.database.database_manager import DatabaseManager
 from src.system.di.container import container
 from src.common.logger import get_logger
-from src.cortices.qq_chat.tools.utils.replyer import QQReplyer
+from src.cortices.qq_chat.chat.replyer import QQReplyer
+from src.cortices.qq_chat.chat.deep_chat_planner import DeepChatPlanner
 
 
 logger = get_logger("qq_chat")
@@ -43,6 +44,7 @@ class BatchQuickPlanTool(BaseTool):
         self.llm_request_factory = llm_request_factory
         self.database_manager = database_manager
         self.replyer = QQReplyer(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex)
+        self.deep_chat_planner = DeepChatPlanner(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex,replyer=self.replyer)
     @property
     def scope(self) -> str:
         return "qq_app"
@@ -209,7 +211,8 @@ f"""
                         results.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
                         # 执行回复发送...
                     elif act_type == "deep_chat":
-                        results.append(f"在“{conversation_info.conversation_name}”聊天中，你想开始深度聊天，但开发者还没做这个功能（哼哼你能拿我怎么样~）")
+                        result = await self.deep_chat_planner.enter_deep_chat(conversation_info,reason)
+                        results.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
 
                     
                 except Exception as e:
