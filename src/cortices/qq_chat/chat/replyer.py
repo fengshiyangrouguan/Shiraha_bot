@@ -142,19 +142,18 @@ class QQReplyer:
         new_event.add_tag("self_message")
         await self.cortex.post_event_to_processor(new_event)
 
-    async def execute(self, conversation_info: ConversationInfo, reason: str, chat_stream: Optional[QQChatStream] = None) -> str:
+    async def execute(self, reason: str, chat_stream: Optional[QQChatStream] = None) -> str:
         """
         批量执行快速回复逻辑。
         """
         result = []
         try:
+            chat_stream = chat_stream
+            conversation_info = chat_stream.conversation_info
             conversation_id = conversation_info.conversation_id
             
-            # 获取聊天上下文
-            if chat_stream:
-                recent_messages = chat_stream.build_chat_history_has_msg_id()
-            else:
-                recent_messages = "无最近聊天记录"
+            recent_messages = chat_stream.build_chat_history_has_msg_id()
+
 
             # 3. 构造 Prompt 并请求 LLM 生成具体台词
             logger.info(f"我在{conversation_info.conversation_name}的聊天意图：{reason}")
@@ -238,7 +237,7 @@ class QQReplyer:
             # 观察一下发送消息的反应
             chat_stream.mark_as_replyed()
             await asyncio.sleep(10)
-            result = await self._summary_action(chat_stream,conversation_id,reason)
+            result = await self._summary_action(chat_stream,reason)
             return result
             
         except Exception as e:
@@ -259,12 +258,9 @@ class QQReplyer:
             message_seg = MessageSegment(type="text",data=text)
             await self._post_self_message_event(conversation_info.conversation_id, conversation_info, [message_seg])
 
-    async def _summary_action(self, chat_stream: QQChatStream, conversation_id, reason):
+    async def _summary_action(self, chat_stream: QQChatStream, reason):
+
         recent_messages = chat_stream.build_chat_history_for_summary()
-        if not chat_stream:
-            qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
-            chat_stream = qq_chat_data.streams[conversation_id]
-            recent_messages = chat_stream.build_chat_history_for_summary()
         llm_request = self.llm_request_factory.get_request("utils_small")
         prompt = f"""
 你是一个行动总结器。请将意图和聊天记录压缩总结为自我行为记录。
@@ -277,7 +273,7 @@ class QQReplyer:
 ## 归纳要求
 1. **第一人称**：必须以“我...”开头。
 2. 要求流畅地描述我因为什么意图干了什么，聊天中除了我自己其他人有没有反应，反应是什么，判断发的消息是否太多了，**如果没有反应请明确说明**
-2. 不超过 50 字。
+2. 输出50 字左右。
 3. **情感一致性**：根据发送的内容，推测并保留自己当时的情绪色彩。
 
 """

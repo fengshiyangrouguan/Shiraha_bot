@@ -1,4 +1,5 @@
 # src/cortices/qq_chat/chat_stream.py
+import asyncio
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
@@ -12,8 +13,8 @@ from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import UserInfoDB, ConversationInfoDB, EventDB
 
 # 定义滑动窗口大小常量
-MAX_LLM_CONTEXT_SIZE = 12
-MAX_RAW_EVENTS_SIZE = 12
+MAX_LLM_CONTEXT_SIZE = 30
+MAX_RAW_EVENTS_SIZE = 30
 
 logger = get_logger("ChatStream")
 
@@ -38,6 +39,14 @@ class QQChatStream(BaseModel):
     stream_id: str = Field(..., description="唯一的流 ID，直接使用conversation_id")
     bot_id: Optional[str] = None
     conversation_info:ConversationInfo
+
+    # asyncio.Event 实例，作为收到新消息的信号旗，用于更新深度聊天的planner
+    _new_message_event = asyncio.Event()
+
+    # 在群聊中，每积累n条消息才重开始规划，防止token大量消耗
+    _new_plan_msg_threshold_for_group:int = 5
+    _new_plan_msg_threshold_for_private:int = 1
+    _msg_count:int = 0
     
     # LLM 相关上下文
     llm_context: List[QQChatMessage] = Field(default_factory=list, description="用于 LLM 请求的滑动窗口消息列表")
@@ -57,6 +66,8 @@ class QQChatStream(BaseModel):
         向聊天流中添加一个新事件，并更新相关状态。
         """
         # 添加原始事件，并应用滑动窗口
+        self._msg_count += 1
+
         self.raw_events.append(event)
         if len(self.raw_events) > MAX_RAW_EVENTS_SIZE:
             self.raw_events = self.raw_events[-MAX_RAW_EVENTS_SIZE:]
@@ -106,8 +117,16 @@ class QQChatStream(BaseModel):
             event_metadata=event.event_data.metadata
         )
         await self.database_manager.upsert(event_db)
-        logger.debug(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
+        if self.conversation_info.conversation_type == "group":
+            if self._msg_count > self._new_plan_msg_threshold_for_group:
+                self._new_message_event.set()
+                self._msg_count = 0
+        else:
+            if self._msg_count > self._new_plan_msg_threshold_for_private:
+                self._new_message_event.set()
+                self._msg_count = 0
 
+        logger.debug(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
         logger.debug(f"事件 ({event.event_type}) 针对流 ({self.stream_id}) 处理完成。")
 
 
@@ -150,6 +169,9 @@ class QQChatStream(BaseModel):
         """
         history_lines = []
         
+        if not self.llm_context:
+            return "无最近聊天记录"
+        
         # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
         for i, msg in enumerate(self.llm_context):
             
@@ -186,6 +208,10 @@ class QQChatStream(BaseModel):
         """
         history_lines = []
         divider_inserted = False
+        
+        if not self.llm_context:
+            return "无最近聊天记录"
+        
         # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
         for i, msg in enumerate(self.llm_context):
             if not msg.is_replyed and not divider_inserted:
@@ -210,7 +236,7 @@ class QQChatStream(BaseModel):
         # 如果循环结束了依然没有插入过分割线，且历史记录不为空
         # 说明所有消息都是已读的，直接在最后追加标识符
         if not divider_inserted and history_lines:
-            history_lines.append("—— 以上为已回复历史消息，禁止回复 ——")
+            history_lines.append("—— 以上为已回复的历史消息，禁止回复 ——")
         
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)
@@ -218,3 +244,6 @@ class QQChatStream(BaseModel):
     def mark_as_replyed(self):
         for i, msg in enumerate(self.llm_context):
             msg.is_replyed = True
+
+    def get_new_message_event(self) -> asyncio.Event:
+        return self._new_message_event

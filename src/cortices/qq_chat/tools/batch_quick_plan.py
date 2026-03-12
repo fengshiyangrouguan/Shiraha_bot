@@ -170,7 +170,7 @@ f"""
                 chat_stream = None
                 if qq_chat_data and conversation_id in qq_chat_data.streams:
                     chat_stream = qq_chat_data.streams[conversation_id]
-                    recent_messages = chat_stream.build_chat_history_has_msg_id()
+                    
                     conversation_info = chat_stream.conversation_info
                 else:
                     # 尝试从数据库兜底
@@ -184,7 +184,8 @@ f"""
                         conversation_type=conv_db.conversation_type or "private",
                         conversation_name=conv_db.conversation_name or "未知对象"
                     )
-                    recent_messages = "无最近聊天记录"
+                    chat_stream = qq_chat_data.get_or_create_stream(conversation_info=conversation_info)
+                recent_messages = chat_stream.build_chat_history_has_msg_id()
 
                 # 3. 构造 Prompt 并请求 LLM 生成具体台词
                 logger.info(f"我在{conversation_info.conversation_name}的聊天意图：{intent}")
@@ -218,11 +219,11 @@ f"""
                         logger.info(f"我决定不回复: {reason}")
                         results.append(f"在“{conversation_info.conversation_name}”聊天中，我决定不参与聊天，原因是{reason}")
                     elif act_type == "reply":
-                        result = await self.replyer.execute(conversation_info,reason,chat_stream)
+                        result = await self.replyer.execute(reason,chat_stream)
                         results.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
                         # 执行回复发送...
                     elif act_type == "deep_chat":
-                        result = await self.deep_chat_planner.enter_deep_chat(conversation_info,reason)
+                        result = await self.deep_chat_planner.enter_deep_chat(reason,chat_stream)
                         results.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
 
                     
