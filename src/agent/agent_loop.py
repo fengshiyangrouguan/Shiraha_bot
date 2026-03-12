@@ -49,6 +49,7 @@ class AgentLoop:
         if plan_result.tool_name == "finish":
             tool_result = "你发呆了一会儿。"
             logger.info(f"{tool_result}")
+            await asyncio.sleep(200)
         else:
             tool_call = ToolCall(tool_name=plan_result.tool_name, parameters=plan_result.parameters)
             tool_result = await self.cortex_manager.execute_tool(tool_call)
@@ -59,7 +60,7 @@ class AgentLoop:
 
     async def _record_step_memory(self, motive: str, plan: str, tool_result: str):
         """记录单步的记忆"""
-        llm_request = self.llm_factory.get_request(task_name="utils_small")
+        llm_request = self.llm_factory.get_request(task_name="planner")
         prompt = (
             f"""
 你是一个记忆总结器，
@@ -69,9 +70,9 @@ class AgentLoop:
 对动机的规划想法：{plan}
 行动结果：{tool_result}
 
-请你以第一人称视角，对上面的记忆，进行50字左右的总结，
+请你以第一人称视角，对上面的记忆，视源文本情况，进行50字~100字左右的总结，
 对动机，规划尽量简短，对行动结果偏详细
-要求保留原文中的行文、说话风格
+要求保留原文中的行文、说话风格，去除其中你认为可能是ai幻觉产生的干扰内容
 语气要自然，只对原文进行压缩，保留重要关键词，不添加任何原文没有的内容/词汇/感想，不换行
 """
         )

@@ -99,12 +99,13 @@ class BatchQuickPlanTool(BaseTool):
         else:
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
+# - **你的兴趣**： {interest}
         prompt = (
 f"""
 ## 你的身份设定与当前状态:
 - **你的名字**： {name}
 - **你的性格**： {personality}
-- **你的兴趣**： {interest}
+
 - **你的当前情绪**： {mood}
 
 {chat_target}

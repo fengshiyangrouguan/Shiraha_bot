@@ -137,8 +137,8 @@ class StratReadingTool(BaseTool):
 
 ## 指令
 请基于上述内容完成一份读书笔记。你的笔记必须包含以下三个维度：
-1. **summary**: 用你自己的语气，简明扼要地复述这段内容的核心信息，要像是在日记里对自己说话。
-2. **reflection**: 这段内容是否触动了你？写下你的感悟。
+1. **summary**: 用你自己的语气，第一人称，以"我……"开头，简明扼要地复述这段内容的核心信息，要像是在日记里对自己说话。
+2. **reflection**: 这段内容是否触动了你？以第一人称，写下你的感悟。
 3. **next_motive**: 读完这段后，你想去做什么？请给出一个明确的动机(例如继续读/停止阅读去分享/换本书……)。
 4. **action**: 决定 "continue" (继续读下一段) 或 "exit" (停止阅读)。
 
@@ -188,6 +188,6 @@ class StratReadingTool(BaseTool):
     3. 语气要自然，只对原文进行压缩精简，保留关键词，不添加任何原文没有的新的内容/词汇/感想，不换行
     """
         # 使用较小的 planner 或专用的 summary 模型
-        llm_request = self.llm_request_factory.get_request("utils_small")
+        llm_request = self.llm_request_factory.get_request("planner")
         summary, _ = await llm_request.execute(prompt=prompt)
         return summary.strip()

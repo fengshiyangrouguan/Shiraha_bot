@@ -27,7 +27,7 @@ class QQChatMessage(BaseModel):
     user_id: Optional[str] = None
     content: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    is_readed:bool = False
+    is_replyed:bool = False
 
 class QQChatStream(BaseModel):
     """
@@ -131,7 +131,6 @@ class QQChatStream(BaseModel):
             # 更新未读计数
             if "self_message" not in event.tags:
                 self.unread_count += 1
-                chat_message.is_readed = True
             
     def mark_as_read(self):
         """
@@ -161,7 +160,7 @@ class QQChatStream(BaseModel):
             timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
             if self.bot_id is not None and str(msg.user_id) == str(self.bot_id):
-                sender_nickname = "我自己"
+                sender_nickname = "你自己"
 
             # 格式化消息内容：[序号] [时间] 发送者: 消息内容
             # 注意：i 是从 0 开始的索引
@@ -189,7 +188,7 @@ class QQChatStream(BaseModel):
         divider_inserted = False
         # 使用 enumerate 遍历 llm_context，获取索引 i 和消息对象 msg
         for i, msg in enumerate(self.llm_context):
-            if not msg.is_readed and not divider_inserted:
+            if not msg.is_replyed and not divider_inserted:
                 if history_lines:  # 确保前面有历史消息才加分割线
                     history_lines.append("—— 以上为已回复历史消息，禁止回复 ——")
                 divider_inserted = True
@@ -201,13 +200,12 @@ class QQChatStream(BaseModel):
             timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
             if self.bot_id is not None and str(msg.user_id) == str(self.bot_id):
-                sender_nickname = "我自己"
+                sender_nickname = "你自己"
                 
             line = (
                 f"[{timestamp_str}] {sender_nickname}(消息ID:{msg_id}): {msg.content or '[消息内容为空]'}"
             )
             history_lines.append(line)
-            msg.is_readed = True
 
         # 如果循环结束了依然没有插入过分割线，且历史记录不为空
         # 说明所有消息都是已读的，直接在最后追加标识符
@@ -216,3 +214,7 @@ class QQChatStream(BaseModel):
         
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)
+    
+    def mark_as_replyed(self):
+        for i, msg in enumerate(self.llm_context):
+            msg.is_replyed = True

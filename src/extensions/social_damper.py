@@ -22,7 +22,7 @@ class SocialDamper:
         self.llm_factory:LLMRequestFactory = llm_factory
         self.world_model:WorldModel = world_model
         # 使用小模型进行快速、低成本的社交判断
-        self.llm_request = self.llm_factory.get_request("utils_small")
+        self.llm_request = self.llm_factory.get_request("planner")
 
     async def damp_intent(self, intent: str, chat_history: str) -> DAMP_RESULT_TYPE:
         """
@@ -43,9 +43,14 @@ class SocialDamper:
 AI的人设是：{personality}
 
 审查规则：
-1.  如果意图和聊天内容有关、不会引起误解，则无需修正，"should_damp"直接输出False。
+1.  只要意图和聊天内容有关、不会引起误解，就无需修正，即便看起来不礼貌也没关系。"should_damp"直接输出False。
 2.  如果意图会显得突兀、重复、不合时宜，你需要仿照原意图的风格，长度，根据原意图修正一个符合当前语境的版本，去掉其中和聊天无关的干扰内容。
-3.  你的所有输出必须是严格的JSON格式。
+3.  你的所有输出必须是严格的JSON格式。绝对禁止修改原意图中的任何人名、群名、作品名
+
+判定为 True (需要修正) 的唯一标准：
+- 意图完全脱离了对话历史，自说自话，可能会导致冷场（例如：大家在聊游戏，它突然要聊书）。
+- 意图复读了之前的对话，没有信息增量。
+- 意图禁止含有巧妙转换引导群聊聊天内容的想法
 
 输入：
 - 原始意图 (intent)
@@ -54,7 +59,7 @@ AI的人设是：{personality}
 输出JSON格式：
 {{
     "should_damp": 布尔值,
-    "damped_intent": "修正后的意图文本"
+    "damped_intent": "修正后的意图文本，如果无需修正，请原样保留原始意图；"
 }}
 """
         

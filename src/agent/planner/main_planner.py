@@ -29,7 +29,7 @@ class MainPlanner(BasePlanner):
             f"## 你的身份设定与当前状态:\n"
             f"**你的名字**: {context['bot_name']}\n"
             f"**你的性格**: {context['bot_personality']}\n"
-            f"**你的兴趣**: {context['bot_interest']}\n\n"
+            # f"**你的兴趣**: {context['bot_interest']}\n\n"
             f"**你的当前情绪**: \n{context['mood']}\n\n"  
             f"**你的初始动机意图**: \"{motive}\"\n\n"
             f"## 核心规则：\n"
