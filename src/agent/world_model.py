@@ -122,7 +122,7 @@ class WorldModel:
             """根据当前小时返回时间段描述。"""
             hour = time.localtime().tm_hour
             
-            if 5 <= hour < 9:
+            if 6 <= hour < 9:
                 return "清晨"
             elif 9 <= hour < 12:
                 return "上午"
@@ -132,7 +132,7 @@ class WorldModel:
                 return "下午"
             elif 18 <= hour < 24:
                 return "晚上"
-            else:  # 0 <= hour < 5
+            else:  # 0 <= hour < 6
                 return "凌晨"
             
     def get_current_time_string(self) -> str:

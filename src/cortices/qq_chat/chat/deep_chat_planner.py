@@ -34,7 +34,7 @@ class DeepChatPlanner():
         self.cortex = cortex
         self.replyer = replyer
     def _build_prompt(self, conversation_info: ConversationInfo, history: str, intent: str, act_result: str, loop_len: int):
-        """构造高质量深度回复 Prompt"""
+        """构造深度回复 Prompt"""
         name = self._world_model.bot_name
         personality = self._world_model.bot_personality
         mood = self._world_model.mood
@@ -89,7 +89,7 @@ class DeepChatPlanner():
 
 2. **wait_for_message**: 保持沉默，持续观察聊天
 {{
-    "action": "wait_and_see",
+    "action": "wait_for_message",
     "reason": "沉默的理由"
 }}
 
@@ -161,7 +161,7 @@ class DeepChatPlanner():
                         results.append(result)
 
                     elif act_type == "reply":
-                        result = await self.replyer.execute(conversation_info,reason,chat_stream)
+                        result = await self.replyer.execute(reason,chat_stream)
                         results.append(result)
 
                     elif act_type == "exit":
