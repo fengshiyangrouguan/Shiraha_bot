@@ -51,6 +51,7 @@ class QQReplyer:
         interest = self._world_model.bot_interest
         mood = self._world_model.mood
         expression_style = self._world_model.bot_expression_style
+        time = self._world_model.get_current_time_string()
         short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self._world_model.short_term_memory) 
 
         if conversation_info.conversation_type == "group":
@@ -68,6 +69,7 @@ class QQReplyer:
 - **你的近期活动**：
 {short_term_memory}
 
+{time}
 {chat_target}
 
 ## **以下是最近聊天记录**,请仔细阅读：

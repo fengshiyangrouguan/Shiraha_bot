@@ -43,13 +43,14 @@ class MotiveEngine:
         根据 WorldModel 和 prompt_design.md 的设计构建 LLM 提示。
         """
         context = world_model.get_context_for_motive()
+        time = world_model.get_current_time_string()
         
         prompt_template = f"""
 你叫 {context['bot_name']}。
 你是 {context['bot_identity']}。
 你的性格是 {context['bot_personality']}，你的兴趣包括 {context['bot_interest']}。
 
-现在是 {context['time']}。
+{time}。
 此刻你的心理状态是：{context['mood']}。
 
 {context["notifications"]}

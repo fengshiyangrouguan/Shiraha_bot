@@ -118,6 +118,37 @@ class WorldModel:
             self.energy = max(0, min(100, self.energy + energy_delta)) # 确保精力在0-100之间
             print(f"WorldModel: 精力变化 {energy_delta} -> 当前精力: {self.energy}")
 
+    def _get_time_period(self) -> str:
+            """根据当前小时返回时间段描述。"""
+            hour = time.localtime().tm_hour
+            
+            if 5 <= hour < 9:
+                return "清晨"
+            elif 9 <= hour < 12:
+                return "上午"
+            elif 12 <= hour < 14:
+                return "中午"
+            elif 14 <= hour < 18:
+                return "下午"
+            elif 18 <= hour < 24:
+                return "晚上"
+            else:  # 0 <= hour < 5
+                return "凌晨"
+            
+    def get_current_time_string(self) -> str:
+        """获取全中文格式化的时间字符串。"""
+        now = time.localtime()
+        # 映射星期：time.localtime().tm_wday 返回 0-6 (周一到周日)
+        week_days = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+        week_str = week_days[now.tm_wday]
+        
+        # 格式化基础时间
+        time_format = time.strftime('%Y年%m月%d日 %H:%M:%S', now)
+        period = self._get_time_period()
+        
+        return f"现在是{time_format} {week_str} {period}"
+
+
     def get_context_for_motive(self) -> Dict[str, Any]:
         """
         打包并返回 MotiveEngine Prompt 所需的全部上下文信息。

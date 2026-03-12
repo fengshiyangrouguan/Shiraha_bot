@@ -39,6 +39,7 @@ class DeepChatPlanner():
         personality = self._world_model.bot_personality
         mood = self._world_model.mood
         interest = self._world_model.bot_interest
+        time = self._world_model.get_current_time_string()
         if loop_len == 1:
             init_intent = f"""## 待执行的社交规划
 你当前的行动意图是："{intent}"
@@ -58,6 +59,7 @@ class DeepChatPlanner():
 - **你的兴趣**： {interest}
 - **你的当前情绪**： {mood}
 
+{time}
 {chat_target}
 
 ## **你之前的行动记录**：

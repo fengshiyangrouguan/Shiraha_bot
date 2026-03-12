@@ -106,6 +106,7 @@ class EnterQQAppTool(BaseTool):
         # 模仿 main_planner, 获取可用工具
         context = self.world_model.get_context_for_motive()
         available_tools = self.cortex_manager.get_tool_schemas(scope="qq_app")
+        time = self.world_model.get_current_time_string()
         short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self.world_model.short_term_memory)
 # 你的兴趣包括 {context['bot_interest']}。
         prompt = f"""
@@ -113,8 +114,7 @@ class EnterQQAppTool(BaseTool):
 你是 {context['bot_identity']}。
 你的性格是 {context['bot_personality']}，
 
-
-现在是 {context['time']}。
+{time}
 此刻你的心理状态是：{context['mood']}。
 
 你的近期活动记忆：

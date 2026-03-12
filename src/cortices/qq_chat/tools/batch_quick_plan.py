@@ -84,6 +84,7 @@ class BatchQuickPlanTool(BaseTool):
         interest = self._world_model.bot_interest
         mood = self._world_model.mood
         # plan_style = self._world_model.bot_plan_style
+        time = self._world_model.get_current_time_string()
         short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self._world_model.short_term_memory) 
         damper_result:dict = await self.social_damper.damp_intent(intent,history)
         if damper_result["should_damp"]:
@@ -108,6 +109,7 @@ f"""
 
 - **你的当前情绪**： {mood}
 
+{time}
 {chat_target}
 
 ## **以下是最近聊天记录**,请仔细阅读：
