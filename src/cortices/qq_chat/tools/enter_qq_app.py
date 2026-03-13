@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from sqlmodel import select
 
 from src.common.database.database_model import ConversationInfoDB, EventDB
+from src.common.di.container import container
 from src.cortices.tools_base import BaseTool
 from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
@@ -26,11 +27,11 @@ class EnterQQAppTool(BaseTool):
     它现在可以直接处理简单的工具调用（如发送消息），或将复杂任务（如批量处理）委派出去。
     """
 
-    def __init__(self, world_model: WorldModel, cortex_manager: "CortexManager", database_manager: "DatabaseManager", llm_request_factory: "LLMRequestFactory"):
+    def __init__(self, cortex_manager: "CortexManager"):
         super().__init__(cortex_manager)
-        self.world_model = world_model
-        self.database_manager = database_manager
-        self.llm_request_factory = llm_request_factory
+        self._world_model = container.resolve(WorldModel)
+        self.database_manager = container.resolve(DatabaseManager)
+        self.llm_request_factory = container.resolve(LLMRequestFactory)
 
     @property
     def scope(self) -> str:

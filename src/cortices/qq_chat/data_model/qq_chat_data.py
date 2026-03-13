@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from .chat_stream import QQChatStream
 from src.common.event_model.info_data import ConversationInfo
 from src.common.database.database_manager import DatabaseManager
+from src.common.database.database_model import ConversationInfoDB
 from src.common.di.container import container
 
 class QQChatData(BaseModel):
@@ -14,14 +15,38 @@ class QQChatData(BaseModel):
     """
     streams: Dict[str, QQChatStream] = Field(default_factory=dict)
     bot_id: Optional[str] = None
+    
 
-    def get_or_create_stream(self, conversation_info:ConversationInfo) -> QQChatStream:
+    def _get_or_create_stream(self, conversation_info:ConversationInfo) -> QQChatStream:
         """
         获取一个聊天流，如果不存在则创建并返回。
         """
         if conversation_info.conversation_id not in self.streams:
             self.streams[conversation_info.conversation_id] = QQChatStream(stream_id=conversation_info.conversation_id, conversation_info=conversation_info, bot_id=self.bot_id)
         return self.streams[conversation_info.conversation_id]
+    
+    async def get_or_create_stream_by_id(self, conversation_id: str) -> Optional[QQChatStream]:
+        """
+        核心逻辑：先从内存找，找不到则去数据库搜，搜到了就同步到内存，搜不到返回 None。
+        """
+        # 第一步：检查内存中是否已存在
+        if conversation_id in self.streams:
+            return self.streams[conversation_id]
+
+        # 第二步：尝试从数据库兜底 (假设 ConversationInfoDB 是你的数据库模型)
+        db_manager = container.resolve(DatabaseManager)
+        conv_db = await db_manager.get(ConversationInfoDB, conversation_id)
+        if conv_db:
+            # 构造临时 Info 对象
+            conversation_info = ConversationInfo(
+                conversation_id=conversation_id,
+                conversation_type=getattr(conv_db, "conversation_type", "private") or "private",
+                conversation_name=getattr(conv_db, "conversation_name", "未知对象") or "未知对象"
+            )
+            # 使用同步方法同步到内存并返回
+            return self._get_or_create_stream(conversation_info)
+        
+        return None
 
     @property
     def total_unread_count(self) -> int:
@@ -41,16 +66,6 @@ class QQChatData(BaseModel):
             stream for stream in self.streams.values() if stream.unread_count > 0
         ]
 
-    class Config:
-        arbitrary_types_allowed = True
-
-    def get_stream_by_id(self, stream_id: str) -> Optional[QQChatStream]:
-        """
-        通过 stream ID 获取一个已存在的 QQChatStream 实例。
-        如果 Stream 不存在，则返回 None。
-        """
-        return self.streams.get(stream_id)
-    
     def get_all_streams_history_for_llm(self) -> str:
         """
         获取所有聊天流的格式化历史记录。

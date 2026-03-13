@@ -1,26 +1,37 @@
 # src/agent/planner/main_planner.py
 import json
-from typing import List, Dict, Any
+from typing import Optional
 
-from .base_planner import BasePlanner
-from src.llm_api.dto import LLMMessageBuilder
-from src.agent.world_model import WorldModel
-from src.cortices.manager import CortexManager
 from src.common.di.container import container
+from src.agent.world_model import WorldModel
+from src.agent.planner.planner_result import PlanResult
+from src.cortices.manager import CortexManager
 
-class MainPlanner(BasePlanner):
+from src.llm_api.dto import LLMMessageBuilder
+from src.llm_api.factory import LLMRequestFactory
+from src.llm_api.plan_parser import PlanParser
+
+
+class MainPlanner:
     """
     主规划器。
     负责将高阶意图分解为具体的行动步骤。
     它声明自己需要一个 `motive` 字符串作为输入。
     """
     def __init__(self):
-        super().__init__(task_name="main_planner", logger_name="main_planner")
+        # 通过 DI 容器获取依赖
+        self.world_model: WorldModel = container.resolve(WorldModel)
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
+        llm_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
 
-    async def plan(self, motive:str, previous_observation:str = None) -> List[Dict[str, Any]]:
+        # 初始化与 LLM 交互的组件
+        self.llm_request = llm_factory.get_request("main_planner")
+        self.plan_parser = PlanParser(logger_name="main_planner")
+
+
+    async def plan(self, motive:str, previous_observation:str = None) -> Optional[PlanResult]:
         """
-        [实现] 构建 ReAct (Reason+Act) 风格的提示,然后send_to_LLM
+        构建提示 -> 调用 LLM -> 解析结果 -> 返回 PlanResult
         """
         context = self.world_model.get_context_for_motive()
         available_tools = self.cortex_manager.get_tool_schemas(scope="main")
@@ -43,7 +54,7 @@ class MainPlanner(BasePlanner):
             "3. JSON 格式：\n"
             f"```json\n"
             "{\n"
-            "   \"thought\": \"一句短平文本，不分点，不换行，不解释工具作用，只解释你为何选择该工具。\", \n"
+            "   \"reason\": \"一句短平文本，不分点，不换行，不解释工具作用，只解释你为何选择该工具。\", \n"
             "   \"action\": { \n"
             "       \"tool_name\": \"工具名称（字符串）\", \n"
             "       \"parameters\": {...} \n"
@@ -53,7 +64,7 @@ class MainPlanner(BasePlanner):
             "4. action 只能包含一个工具。\n"
             "5. 如果你认为没有工具适合执行，则返回：\n"
             "{\n"
-            "   \"thought\": \"结束规划的原因\", \n"
+            "   \"reason\": \"结束规划的原因\", \n"
             "   \"action\": {\"tool_name\": \"finish\", \"parameters\": {}} \n"
             "}\n"
         )
@@ -71,14 +82,21 @@ class MainPlanner(BasePlanner):
             f"{json.dumps(available_tools, ensure_ascii=False, indent=2)}"
             "```\n\n"
             f"--- \n"
-            "**基于以上信息，开始思考并输出你下一步的 JSON 决策（包含`thought`和`action`）。**"
+            "**基于以上信息，开始思考并输出你下一步的 JSON 决策（包含`reason`和`action`）。**"
         )
         
         builder = LLMMessageBuilder()
         builder.add_system_message(system_prompt)
         builder.add_user_message(user_prompt)
         
-        prompt = builder.get_message_dict()        
-        plan_result = await self.send_to_LLM(prompt)
-        return plan_result
+        prompt_dict = builder.get_message_dict()
         
+        # 调用 LLM 获取原始回复
+        content, model_name = await self.llm_request.execute(
+            prompt=json.dumps(prompt_dict)
+        )
+
+        # 使用 PlanParser 解析和校验
+        plan_result = self.plan_parser.parse(content)
+        
+        return plan_result

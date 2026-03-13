@@ -14,6 +14,7 @@ from src.common.database.database_manager import DatabaseManager
 from src.cortices.qq_chat.chat.replyer import QQReplyer
 from src.cortices.qq_chat.cortex import QQChatCortex
 from src.common.logger import get_logger
+from src.common.di.container import container
 
 
 logger = get_logger("qq_deep_chat")
@@ -21,18 +22,20 @@ logger = get_logger("qq_deep_chat")
 if TYPE_CHECKING:
     from src.cortices.manager import CortexManager
 
-class DeepChatPlanner():
+class DeepChatSubAgent():
     """
-    深度对话工具：
-    用于处理需要长期交流的会话。
+    深度聊天子智能体。
+    负责在单个会话中进行持续的、有状态的交互。
+    它拥有自己的“感知-规划-行动”循环。
     """
-    def __init__(self, world_model: WorldModel, adapter: QQNapcatAdapter, llm_request_factory: LLMRequestFactory, database_manager:DatabaseManager, cortex:QQChatCortex, replyer:QQReplyer):
-        self._world_model = world_model
+    def __init__(self, adapter: QQNapcatAdapter, cortex:QQChatCortex, replyer:QQReplyer): 
         self.adapter = adapter
-        self.llm_request_factory = llm_request_factory
-        self.database_manager = database_manager
         self.cortex = cortex
         self.replyer = replyer
+        self._world_model: WorldModel = container.resolve(WorldModel)
+        self.llm_request_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
+        self.database_manager:DatabaseManager = container.resolve(DatabaseManager)
+
     def _build_prompt(self, conversation_info: ConversationInfo, history: str, intent: str, act_result: str, loop_len: int):
         """构造深度回复 Prompt"""
         name = self._world_model.bot_name
@@ -84,35 +87,45 @@ class DeepChatPlanner():
 1. **reply**: 发送/回复消息
 {{
     "action": "reply",
-    "reason": "发送消息的原因/意图"
+    "parameters":{
+        "reason": "发送消息的原因/意图"
+    }
 }}
 
 2. **wait_for_message**: 保持沉默，持续观察聊天
 {{
     "action": "wait_for_message",
-    "reason": "沉默的理由"
+    "parameters":{
+        "reason": "沉默的理由"
+    }
 }}
 
 3. **exit**: 退出深度聊天
 {{
     "action": "exit",
-    "reason": "退出的理由"
+    "parameters":{
+        "reason": "退出的理由"
+        "follow_action":{
+            "action":"退出深度聊天后想要执行的行动名称，如果没有则输入“None”"
+            "parameters":"调用的工具需要的参数"
+        }
+    }
 }}
 
 
 输出格式示例如下：
 {{
-    "action": "……",
-    其他需要的参数……
+    "action": "行动名称",
+    "parameters":"需要的参数"
 }}
 
 - **只输出 JSON 代码块**，不要任何多余文字。
 请基于这些内容，选择一个action，生成JSON输出。
 """
 
-    async def enter_deep_chat(self, intent: str, chat_stream: Optional[QQChatStream]= None) -> str:
+    async def run(self, intent: str, chat_stream: Optional[QQChatStream]= None) -> str:
         conversation_info:ConversationInfo = chat_stream.conversation_info
-        logger.info(f"进入深度对话模式 -> {conversation_info.conversation_name}，初始意图: {intent}")
+        logger.info(f"子智能体启动：进入深度对话模式 -> {conversation_info.conversation_name}，初始意图: {intent}")
         max_loop_len = 15
         loop_len = 0
         results = ["无"]
@@ -169,9 +182,7 @@ class DeepChatPlanner():
                         results.append(result)
                         deep_chat_result = await self._summary_action(intent, act_result,history)
                         return deep_chat_result
-                    
-
-
+            
                 except Exception as e:
                     result=f"行动解析失败了，报错:{e}"
                     continue

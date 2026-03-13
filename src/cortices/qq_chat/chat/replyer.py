@@ -102,8 +102,8 @@ class QQReplyer:
 - **sticker**: 发表情包
 {{ "action": "sticker", "sticker_emotion": "想表达的情感或内容" }}
 
-- **text**: 发消息
-{{ "action": "text", "content": "要发送的文本内容" }}
+{{ "action": "text
+- **text**: 发消息", "content": "要发送的文本内容" }}
 
 - **exit**: 这次不发消息了，当你觉得现在不适宜发消息请只选择输出这一个action
 {{ "action": "exit", "reason": "不参与聊天的原因" }}
