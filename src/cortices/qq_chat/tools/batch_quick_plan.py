@@ -192,8 +192,6 @@ f"""
                     act_name = action.get("action")
                     parameters = action.get("parameters")
                     action = ActionSpec(act_name,parameters)
-                    planned_actions.append(action)
-
                     reason = parameters.get("reason", "无")
                     logger.info(f"执行动作: {act_name}, 理由: {reason}")
 
