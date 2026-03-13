@@ -170,12 +170,17 @@ class CortexManager:
 
 
     
-    def get_tool_schemas(self, scope: str) -> List[Dict]:
-        """获取指定作用域下的所有工具 Schema 列表，用于构建 Prompt。"""
+    def get_tool_schemas(self, scopes: List[str]) -> List[Dict]:
+        """获取指定作用域下的所有工具 Schema 列表。"""
+        if isinstance(scopes, str):
+                scopes = [scopes] # 容错处理：单字符串转列表
+                
         schemas = []
         for tool in self._tools.values():
-            if tool.scope == scope:
-                schemas.append(tool.get_schema())
+            # 使用 set 的交集判断，效率更高且逻辑清晰
+            if set(scopes) & set(tool.scope):
+                schemas.append(tool.metadata)
+                
         return schemas
     
     def get_collected_capability_descriptions(self) -> List[str]:

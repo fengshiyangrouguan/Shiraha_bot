@@ -43,7 +43,7 @@ class BatchQuickPlanTool(BaseTool):
         
     @property
     def scope(self) -> str:
-        return "qq_app"
+        return ["qq_app"]
 
     @property
     def metadata(self) -> Dict[str, Any]:
@@ -78,14 +78,13 @@ class BatchQuickPlanTool(BaseTool):
         # plan_style = self._world_model.bot_plan_style
         time = self._world_model.get_current_time_string()
         damper_result:dict = await self.social_damper.damp_intent(intent,history)
+        available_tools = self.cortex_manager.get_tool_schemas(scopes=["batch_plan"])
+        available_tools_str = json.dumps(available_tools, ensure_ascii=False, indent=2)
         if damper_result["should_damp"]:
             intent_final=f"原始动机在当前语境突兀，社交阻尼器已介入。新动机规划为“{damper_result["damped_intent"]}”"
             logger.info(f"社交阻尼器介入修正动机：{damper_result["damped_intent"]}")
         else:
             intent_final=f"你当前的行动意图是：{intent}"
-
-
-
         if conversation_info.conversation_type == "group":
             chat_target = f"你正在群聊中与群友聊天。"
         else:
@@ -130,6 +129,8 @@ f"""
 
 }}
 
+其他可用action列表：
+{available_tools_str}
 
 
 输出格式示例如下：

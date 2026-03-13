@@ -38,7 +38,7 @@ class DeepChatSubAgent():
         self.llm_request_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
         self.database_manager:DatabaseManager = container.resolve(DatabaseManager)
 
-    def _build_prompt(self, conversation_info: ConversationInfo, history: str, intent: str, act_result: str, loop_len: int):
+    def _build_prompt(self, conversation_info: ConversationInfo, history: str, intent: str, act_result: str, loop_len: int, available_tools:str):
         """构造深度回复 Prompt"""
         name = self._world_model.bot_name
         personality = self._world_model.bot_personality
@@ -117,6 +117,9 @@ class DeepChatSubAgent():
     }}
 }}
 
+其他可用action列表：
+{available_tools}
+
 
 输出格式示例如下：
 {{
@@ -128,7 +131,7 @@ class DeepChatSubAgent():
 请基于这些内容，选择一个action，生成JSON输出。
 """
 
-    async def run(self, intent: str, chat_stream: Optional[QQChatStream]= None) -> str:
+    async def run(self, intent: str, chat_stream: Optional[QQChatStream]= None, available_tools:str = "") -> str:
         conversation_info:ConversationInfo = chat_stream.conversation_info
         logger.info(f"子智能体启动：进入深度对话模式 -> {conversation_info.conversation_name}，初始意图: {intent}")
         max_loop_len = 15
@@ -153,7 +156,7 @@ class DeepChatSubAgent():
 
                 # 2. 构造 Prompt
                 act_result = "\n".join(summary_logs)
-                prompt = self._build_prompt(conversation_info, history, intent,act_result, loop_len)
+                prompt = self._build_prompt(conversation_info, history, intent,act_result, loop_len, available_tools)
 
                 llm_request = self.llm_request_factory.get_request("planner") 
                 content, _ = await llm_request.execute(prompt=prompt)

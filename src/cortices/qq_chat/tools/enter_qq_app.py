@@ -37,13 +37,13 @@ class EnterQQAppTool(BaseTool):
 
     @property
     def scope(self) -> str:
-        return "main"
+        return ["main","deep_chat"] 
 
     @property
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_qq_app",
-            "description": "启动QQ应用进行决策分诊，可直接处理简单回复或委派复杂任务。",
+            "description": "打开/回到QQ的主页面，可查看会话列表和未读消息",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -108,7 +108,7 @@ class EnterQQAppTool(BaseTool):
         """运行轻量判断器（LLM调用）来决定下一步行动"""
         # 模仿 main_planner, 获取可用工具
         context = self._world_model.get_context_for_motive()
-        available_tools = self.cortex_manager.get_tool_schemas(scope="qq_app")
+        available_tools = self.cortex_manager.get_tool_schemas(scopes=["qq_app"])
         time = self._world_model.get_current_time_string()
         short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self._world_model.short_term_memory)
 # 你的兴趣包括 {context['bot_interest']}。

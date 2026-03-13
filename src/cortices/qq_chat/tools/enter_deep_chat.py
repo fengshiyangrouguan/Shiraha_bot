@@ -1,6 +1,6 @@
 # src/cortices/qq_chat/tools/enter_deep_chat.py
 from typing import Dict, Any
-
+import json
 from src.common.action_model.tool_result import ToolResult
 from src.cortices.tools_base import BaseTool
 from src.common.di.container import container
@@ -60,9 +60,12 @@ class EnterDeepChatTool(BaseTool):
 
         # 2. 调用并等待子智能体运行结束
         # 整个主循环将在这里“暂停”，直到 deep_chat_sub_agent 完成它的所有内部循环并返回结果
+        available_tools = self.cortex_manager.get_tool_schemas(scopes=["deep_chat"])
+        available_tools_str = json.dumps(available_tools, ensure_ascii=False, indent=2)
         final_result = await self.deep_chat_sub_agent.run(
             initial_intent=reason,
-            chat_stream=chat_stream
+            chat_stream=chat_stream,
+            available_tools_str = available_tools_str
         )
 
         # 3. 将子智能体的最终总结作为此工具的结果返回
