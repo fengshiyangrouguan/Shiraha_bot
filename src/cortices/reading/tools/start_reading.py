@@ -31,7 +31,7 @@ class StratReadingTool(BaseTool):
     @property
     def scope(self) -> str:
         # 该工具仅在进入 Library 后可见
-        return "reading"
+        return ["reading"]
 
     @property
     def metadata(self) -> Dict[str, Any]:

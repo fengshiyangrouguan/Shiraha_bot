@@ -17,7 +17,7 @@ class QQChatData(BaseModel):
     bot_id: Optional[str] = None
     
 
-    def _get_or_create_stream(self, conversation_info:ConversationInfo) -> QQChatStream:
+    def get_or_create_stream(self, conversation_info:ConversationInfo) -> QQChatStream:
         """
         获取一个聊天流，如果不存在则创建并返回。
         """
@@ -44,7 +44,7 @@ class QQChatData(BaseModel):
                 conversation_name=getattr(conv_db, "conversation_name", "未知对象") or "未知对象"
             )
             # 使用同步方法同步到内存并返回
-            return self._get_or_create_stream(conversation_info)
+            return self.get_or_create_stream(conversation_info)
         
         return None
 

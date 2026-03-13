@@ -104,7 +104,7 @@ class EnterQQAppTool(BaseTool):
         return "\n".join(formatted_list), qq_chat_data
     
 
-    async def _build_prompt(self, objective: str, context_str: str) -> Dict[str, Any]:
+    def _build_prompt(self, objective: str, context_str: str) -> Dict[str, Any]:
         """运行轻量判断器（LLM调用）来决定下一步行动"""
         # 模仿 main_planner, 获取可用工具
         context = self._world_model.get_context_for_motive()
@@ -164,28 +164,27 @@ class EnterQQAppTool(BaseTool):
 请严格按照以上JSON格式之一输出你的决策。
 """     
 
-
+        return prompt
 
  
-    async def execute(self, objective: str) -> str:
+    async def execute(self, objective: str) -> ToolResult:
         """主执行函数：收集信息 -> 决策 -> 执行或委派"""
         context_str, qq_chat_data = await self._get_conversation_info()
         if not qq_chat_data:
             return ToolResult(success=True, summary="QQ未连接网络，先退出QQ了。")
 
-        prompt = await self._build_prompt(objective, context_str)
+        prompt = self._build_prompt(objective, context_str)
         llm_factory = self.llm_request_factory
         llm_request = llm_factory.get_request("planner")
         content, model_name = await llm_request.execute(prompt=prompt)
         response = content.strip()
+        logger.info(f"原始决策：{response}")
 
         try:
             json_str = response.strip().replace("```json", "").replace("```", "")
-            action:dict = json.load(json_str)
+            action:dict = json.loads(json_str)
             action_name = action.get("action")
             parameters:dict = action.get("parameters", {})
-            logger.info(f"原始决策：{action_name}")
-
             if action_name == "exit":
                 if parameters.get("reason"):
                     reason = parameters.get("reason")
@@ -195,6 +194,7 @@ class EnterQQAppTool(BaseTool):
             if not action_name:
                 return ToolResult(success=True, summary="行动无效：QQ卡了")
         except json.JSONDecodeError:
+            logger.error(f"解析JSON错误")
             return ToolResult(success=False, summary=f"解析规划出错")  
         
         try:

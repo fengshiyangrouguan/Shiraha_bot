@@ -49,42 +49,44 @@ class AgentLoop:
 
         # 如果计划是“完成/无事可做”，则提前结束
         if plan_result.action.tool_name == "finish":
-            logger.info(f"规划结束，原因：{plan_result.thought}")
+            logger.info(f"规划结束，原因：{plan_result.reason}")
             # 也可以将此思考过程记入记忆
             self.world_model.add_memory(f"我思考了一下，决定暂时什么都不做，因为：{plan_result.reason}")
             await asyncio.sleep(self.heartbeat_interval * 2) # 适当延长等待时间
             return
 
         # 2. 执行行动链 (Action Chain)
-        next_action: Optional[ActionSpec] = plan_result.action
+        action_queue: List[ActionSpec] = [plan_result.action]
         chain_context: str = f"我的初始想法是：{plan_result.reason}。"
         full_results_for_memory: List[ToolResult] = []
         
         chain_step = 0
         max_chain_steps = 10 # 防止无限调用链
 
-        while next_action and chain_step < max_chain_steps:
+        while action_queue and chain_step < max_chain_steps:
+            # 最新行动出栈
+            current_action = action_queue.pop(0)
             chain_step += 1
-            logger.info(f"行动链 [步骤 {chain_step}]: 执行工具 '{next_action.tool_name}'")
+            logger.info(f"行动链 [步骤 {chain_step}]: 执行工具 '{current_action.tool_name}'")
 
             # 准备参数，并注入临时的链上下文
-            params = next_action.parameters or {}
-            params["chain_context"] = chain_context
+            params = current_action.parameters or {}
+            # params["chain_context"] = chain_context
 
             # 执行工具
             tool_result: ToolResult = await self.cortex_manager.call_tool_by_name(
-                next_action.tool_name, **params
+                current_action.tool_name, **params
             )
 
             # 收集结果用于最终记忆
             full_results_for_memory.append(tool_result)
 
-            # 更新临时的链上下文
-            if tool_result and tool_result.summary:
-                chain_context += f"\n上一步({next_action.tool_name})的结果是：'{tool_result.summary}'。"
+            # # 更新临时的链上下文
+            # if tool_result and tool_result.summary:
+            #     chain_context += f"\n上一步({next_action.tool_name})的结果是：'{tool_result.summary}'。"
             
-            # 获取下一个动作
-            next_action = tool_result.follow_up_action if tool_result else None
+            # 更新消息缓冲队列
+            action_queue = tool_result.follow_up_action if tool_result else None
         
         if chain_step >= max_chain_steps:
             logger.warning("行动链达到最大步骤限制，已强制终止。")

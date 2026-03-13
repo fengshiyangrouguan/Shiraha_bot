@@ -1,5 +1,5 @@
 # src/cortices/qq_chat/tools/enter_deep_chat.py
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 import json
 from src.common.action_model.tool_result import ToolResult
 from src.cortices.tools_base import BaseTool
@@ -8,19 +8,30 @@ from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
 from src.cortices.qq_chat.chat.deep_chat_sub_agent import DeepChatSubAgent
 from src.agent.world_model import WorldModel
+from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
+from src.cortices.qq_chat.cortex import QQChatCortex
+from src.llm_api.factory import LLMRequestFactory
+from src.cortices.qq_chat.chat.replyer import QQReplyer
+
+if TYPE_CHECKING:
+    
+    from src.cortices.manager import CortexManager
 
 class EnterDeepChatTool(BaseTool):
     """
     一个“启动器”工具，用于启动一个专注于单个会话的“深度聊天子智能体”。
     调用此工具将会阻塞主循环，直到子智能体完成其任务并退出。
     """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # 该工具需要获取 WorldModel 来访问数据
-        self._world_model: WorldModel = container.resolve(WorldModel)
-        self.database_manager: DatabaseManager = container.resolve(DatabaseManager)
-        # 创建子智能体实例
-        self.deep_chat_sub_agent = DeepChatSubAgent()
+    def __init__(self, adapter: QQNapcatAdapter, cortex:"QQChatCortex",cortex_manager: "CortexManager"):
+        super().__init__(cortex_manager)
+        self.adapter = adapter
+        self.cortex = cortex
+        self._world_model = container.resolve(WorldModel)
+        self.llm_request_factory = container.resolve(LLMRequestFactory)
+        self.database_manager = container.resolve(DatabaseManager)
+
+        self.replyer = QQReplyer(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex)
+        self.deep_chat_agent = DeepChatSubAgent(adapter=self.adapter,cortex=self.cortex,replyer=self.replyer)
 
     @property
     def scope(self) -> str:

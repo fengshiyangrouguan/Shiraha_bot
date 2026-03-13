@@ -38,7 +38,7 @@ class BatchQuickPlanTool(BaseTool):
         self.social_damper: SocialDamper = container.resolve(SocialDamper)
 
         self.replyer = QQReplyer(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex)
-        self.deep_chat_agent = DeepChatSubAgent(world_model=self._world_model,adapter=self.adapter,llm_request_factory=self.llm_request_factory,database_manager=self.database_manager,cortex=self.cortex,replyer=self.replyer)
+        self.deep_chat_agent = DeepChatSubAgent(adapter=self.adapter,cortex=self.cortex,replyer=self.replyer)
         
         
     @property
@@ -115,17 +115,17 @@ f"""
 1. **reply**: 进行快速回复然后关掉qq去干别的事情
 {{
     "action": "reply",
-    "parameters":{
+    "parameters":{{
         "reason": "回复的原因/意图"
-    }
+    }}
 }}
 
 2. **no_reply**: 保持沉默，不参与该会话。
 {{
     "action": "no_reply",
-    "parameters":{
+    "parameters":{{
         "reason": "沉默的理由"
-    }
+    }}
 
 }}
 
@@ -167,7 +167,7 @@ f"""
                 conversation_info = chat_stream.conversation_info
                 recent_messages = chat_stream.build_chat_history_has_msg_id()
                 logger.info(f"正在为'{conversation_info.conversation_name}'规划意图：{intent}")
-                prompt = self._build_prompt(conversation_info,intent,recent_messages)
+                prompt = await self._build_prompt(conversation_info,intent,recent_messages)
                 
                 llm_factory = self.llm_request_factory
                 llm_request = llm_factory.get_request("planner")

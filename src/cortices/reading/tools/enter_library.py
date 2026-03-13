@@ -28,7 +28,7 @@ class EnterLibraryTool(BaseTool):
 
     @property
     def scope(self) -> str:
-        return "main" # 放置在主 Planner 的工具箱中
+        return ["main"] # 放置在主 Planner 的工具箱中
 
     @property
     def metadata(self) -> Dict[str, Any]:
@@ -77,7 +77,7 @@ class EnterLibraryTool(BaseTool):
     async def _run_decide_planner(self, objective: str, library_str: str) -> Dict[str, Any]:
         """内置轻量决策器"""
         context = self.world_model.get_context_for_motive()
-        available_tools = self.cortex_manager.get_tool_schemas(scope="reading") # 只获取阅读相关的子工具
+        available_tools = self.cortex_manager.get_tool_schemas(scopes=["reading"]) # 只获取阅读相关的子工具
         short_term_memory = "以下是按时间顺序排列的近期活动：\n"+"\n".join(self.world_model.short_term_memory)
         
         prompt = f"""
@@ -115,7 +115,7 @@ class EnterLibraryTool(BaseTool):
 或者
 {{
   "decision": "exit",
-  "reason": "<原因>"
+  "thought": "<原因>"
 }}
 """
         llm_request = self.llm_request_factory.get_request("planner")
@@ -123,9 +123,9 @@ class EnterLibraryTool(BaseTool):
         try:
             return json.loads(s=content.strip().replace("```json", "").replace("```", ""))
         except:
-            return {"decision": "exit", "reason": "我思维突然断片了，打算先离开书架。"}
+            return {"decision": "exit", "thought": "我思维突然断片了，打算先离开书架。"}
 
-    async def execute(self, objective: str) -> str:
+    async def execute(self, objective: str) -> ToolResult:
         # 先清空新书上架通知
         self.world_model.notifications.pop("书房", None)
         library_str = await self._get_library_context()
@@ -151,8 +151,8 @@ class EnterLibraryTool(BaseTool):
                     error_message= e
                 )
 
-        logger.info(f"决定离开书架。原因是{decision.get('reason', '无')}")
+        logger.info(f"决定离开书架。原因是{decision.get('thought', '无')}")
         return ToolResult(
             success=True,
-            summary=f"决定离开书架。原因是{decision.get('reason', '无')}",
+            summary=f"决定离开书架。原因是{decision.get('thought', '无')}",
         )

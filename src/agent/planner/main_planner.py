@@ -34,7 +34,7 @@ class MainPlanner:
         构建提示 -> 调用 LLM -> 解析结果 -> 返回 PlanResult
         """
         context = self.world_model.get_context_for_motive()
-        available_tools = self.cortex_manager.get_tool_schemas(scope="main")
+        available_tools = self.cortex_manager.get_tool_schemas(scopes=["main"])
 
         system_prompt = (
             f"## 你的身份设定与当前状态:\n"
