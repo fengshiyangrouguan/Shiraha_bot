@@ -104,7 +104,7 @@ class EnterQQAppTool(BaseTool):
         return "\n".join(formatted_list), qq_chat_data
     
 
-    async def _run_decide_planner(self, objective: str, context_str: str) -> Dict[str, Any]:
+    async def _build_prompt(self, objective: str, context_str: str) -> Dict[str, Any]:
         """运行轻量判断器（LLM调用）来决定下一步行动"""
         # 模仿 main_planner, 获取可用工具
         context = self._world_model.get_context_for_motive()
@@ -129,12 +129,8 @@ class EnterQQAppTool(BaseTool):
 {context_str}
 
 ## **社交规范注意**
-1.**禁止强行切入**：不要因为对方聊到了你的【兴趣爱好】就生硬地发起话题或过度讨论该关键词。
-2.**社交克制**：不要为了展示你的“兴趣爱好”而生硬地开启话题。不要刻意突出自身兴趣爱好，自然的融入聊天。
-3.**自然流露**：兴趣应该是你性格的底色，而不是你说话的模板。只有在氛围合适时才轻量提及，不要像复读兴趣标签的机器。
-4.**保持随性**：你没有义务回应每一句未读消息。如果话题不投机/不感兴趣/和你没有关系，你可以决定旁观不回复，或者也可以按照你的性格认知下的社交礼仪去决定怎么做。
-6.不要对表情包进行回复
-
+1.**保持随性**：你没有义务回应每一句未读消息。如果话题不投机/不感兴趣/和你没有关系，你可以决定旁观不回复，或者也可以按照你的性格认知下的社交礼仪去决定怎么做。
+2.不要对表情包进行回复
 
 ## 决策规则
 根据你的意图和上面的会话列表，从以下选项中选择一个最合适的行动，并严格按照JSON格式输出。
@@ -167,16 +163,7 @@ class EnterQQAppTool(BaseTool):
 ---
 请严格按照以上JSON格式之一输出你的决策。
 """     
-        llm_factory = self.llm_request_factory
-        llm_request = llm_factory.get_request("planner")
 
-        content, model_name = await llm_request.execute(prompt=prompt)
-        response = content.strip()
-        try:
-            json_str = response.strip().replace("```json", "").replace("```", "")
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            return {"action": "exit", "reason": "无法解析决策器的输出。"}
 
 
  
@@ -186,23 +173,33 @@ class EnterQQAppTool(BaseTool):
         if not qq_chat_data:
             return ToolResult(success=True, summary="QQ未连接网络，先退出QQ了。")
 
-        action = await self._run_decide_planner(objective, context_str)
-        action_name = action.get("action")
-        parameters = action.get("parameters", {})
-        logger.info(f"原始决策：{action_name}")
+        prompt = await self._build_prompt(objective, context_str)
+        llm_factory = self.llm_request_factory
+        llm_request = llm_factory.get_request("planner")
+        content, model_name = await llm_request.execute(prompt=prompt)
+        response = content.strip()
 
-        if action_name == "exit":
-            if parameters.get("reason"):
-                reason = parameters.get("reason")
-                return ToolResult(success=True, summary=reason)
-            else:
-                return ToolResult(success=True, summary="不知道该干什么，退出QQ应用了。")
-        if not action_name:
-            return ToolResult(success=True, summary="行动无效：QQ卡了")
+        try:
+            json_str = response.strip().replace("```json", "").replace("```", "")
+            action:dict = json.load(json_str)
+            action_name = action.get("action")
+            parameters:dict = action.get("parameters", {})
+            logger.info(f"原始决策：{action_name}")
+
+            if action_name == "exit":
+                if parameters.get("reason"):
+                    reason = parameters.get("reason")
+                    return ToolResult(success=True, summary=reason)
+                else:
+                    return ToolResult(success=True, summary="不知道该干什么，退出QQ应用了。")
+            if not action_name:
+                return ToolResult(success=True, summary="行动无效：QQ卡了")
+        except json.JSONDecodeError:
+            return ToolResult(success=False, summary=f"解析规划出错")  
         
         try:
             # 直接执行工具调用
             tool_result:ToolResult = await self.cortex_manager.call_tool_by_name(action_name, **parameters)
             return tool_result
         except Exception as e:
-            return ToolResult(success=False, summary=f"在执行 '{action_name}' 时出错",error_message={e})      
+            return ToolResult(success=False, summary=f"在执行 '{action_name}' 时出错",error_message=e)      

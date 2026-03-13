@@ -3,6 +3,8 @@ import json
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from src.cortices.tools_base import BaseTool
 from src.agent.world_model import WorldModel
+from src.common.action_model.action_spec import ActionSpec
+from src.common.action_model.tool_result import ToolResult
 from src.cortices.reading.reading_data import ReadingData, Book
 from src.llm_api.factory import LLMRequestFactory
 from src.common.database.database_manager import DatabaseManager

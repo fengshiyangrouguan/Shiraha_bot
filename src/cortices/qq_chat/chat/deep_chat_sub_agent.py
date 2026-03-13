@@ -15,6 +15,8 @@ from src.cortices.qq_chat.chat.replyer import QQReplyer
 from src.cortices.qq_chat.cortex import QQChatCortex
 from src.common.logger import get_logger
 from src.common.di.container import container
+from src.common.action_model.tool_result import ToolResult
+from src.common.action_model.action_spec import ActionSpec
 
 
 logger = get_logger("qq_deep_chat")
@@ -43,6 +45,9 @@ class DeepChatSubAgent():
         mood = self._world_model.mood
         interest = self._world_model.bot_interest
         time = self._world_model.get_current_time_string()
+        if not act_result:
+            act_result = "无"
+
         if loop_len == 1:
             init_intent = f"""## 待执行的社交规划
 你当前的行动意图是："{intent}"
@@ -116,7 +121,7 @@ class DeepChatSubAgent():
 输出格式示例如下：
 {{
     "action": "行动名称",
-    "parameters":"需要的参数"
+    "parameters": {{<需要的参数>}}
 }}
 
 - **只输出 JSON 代码块**，不要任何多余文字。
@@ -128,7 +133,7 @@ class DeepChatSubAgent():
         logger.info(f"子智能体启动：进入深度对话模式 -> {conversation_info.conversation_name}，初始意图: {intent}")
         max_loop_len = 15
         loop_len = 0
-        results = ["无"]
+        summary_logs = []
         should_plan_immediately = True
         chat_stream = chat_stream
         while loop_len < max_loop_len:
@@ -143,11 +148,11 @@ class DeepChatSubAgent():
                         logger.info(f"[{conversation_info.conversation_name}] 检测到新消息，继续开始规划。")
                     except asyncio.TimeoutError:
                         result = f"等了好久都没有新消息，感觉需要离开去干点别的了"
-                        results.append(result)
+                        summary_logs.append(result)
                         should_plan_immediately = True
 
                 # 2. 构造 Prompt
-                act_result = "\n".join(results)
+                act_result = "\n".join(summary_logs)
                 prompt = self._build_prompt(conversation_info, history, intent,act_result, loop_len)
 
                 llm_request = self.llm_request_factory.get_request("planner") 
@@ -163,38 +168,47 @@ class DeepChatSubAgent():
                     if not isinstance(action, dict):
                         raise ValueError("输出格式非 JSON 对象")
                     
-                    act_type = action.get("action")
-                    reason = action.get("reason", "无理由")
-                    logger.info(f"执行动作: {act_type}, 理由: {reason}")
+                    act_name = action.get("action")
+                    parameters = action.get("parameters")
+                    action = ActionSpec(act_name,parameters)
+                    reason = parameters.get("reason", "无")
+                    logger.info(f"执行动作: {act_name}, 理由: {reason}")
 
-                    if act_type == "wait_for_message":
+                    if act_name == "wait_for_message":
                         logger.info(f"我决定不回复: {reason}")
                         result = f"我决定沉默并观察聊天，原因是{reason}"
                         should_plan_immediately = False
-                        results.append(result)
+                        summary_logs.append(result)
 
-                    elif act_type == "reply":
+                    elif act_name == "reply":
                         result = await self.replyer.execute(reason,chat_stream)
-                        results.append(result)
+                        summary_logs.append(result)
 
-                    elif act_type == "exit":
+                    elif act_name == "exit":
                         result = f"我决定退出聊天，原因是{reason}"
-                        results.append(result)
-                        deep_chat_result = await self._summary_action(intent, act_result,history)
-                        return deep_chat_result
+                        summary_logs.append(result)
+                        deep_chat_summary = await self._summary_action(intent, act_result,history)
+                        follow_up_action = action.parameters.get("follow_action")
+                        tool_result = ToolResult(success=True, summary=deep_chat_summary) 
+                        if follow_up_action:
+                            tool_result.add_action(follow_up_action)
+                        return tool_result
+                        
             
                 except Exception as e:
                     result=f"行动解析失败了，报错:{e}"
+                    summary_logs.append(result)
                     continue
-
 
             except Exception as e:
                 logger.error(f"DeepChat 执行崩溃: {e}")
-                return f"深度对话执行失败: {e}"
+                summary_logs.append(f"深度对话执行失败: {e}")
         
         result = f"我决定退出聊天，我聊天太久了，感觉需要去干点别的了"
-        deep_chat_result = await self._summary_action(intent, act_result)
-        return deep_chat_result
+        summary_logs.append(result)
+        act_result = "\n".join(summary_logs)
+        deep_chat_summary = await self._summary_action(intent, act_result)
+        return ToolResult(success=True, summary=deep_chat_summary) 
             
     async def _summary_action(self, intent, act_result, history):
 

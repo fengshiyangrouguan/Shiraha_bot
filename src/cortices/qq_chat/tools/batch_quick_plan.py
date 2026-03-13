@@ -204,8 +204,11 @@ f"""
                         summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
                         # 执行回复发送...
                     elif act_name == "deep_chat":
-                        result = await self.deep_chat_agent.enter_deep_chat(reason,chat_stream)
-                        summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
+                        deep_chat_tool_result:ToolResult = await self.deep_chat_agent.run(reason,chat_stream)
+                        summary = deep_chat_tool_result.summary
+                        summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，{summary}")
+                        if deep_chat_tool_result.follow_up_action:
+                            planned_actions.append(deep_chat_tool_result.follow_up_action)
 
                 except Exception as e:
                     summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，行动解析失败了，报错:{e}")
@@ -215,11 +218,10 @@ f"""
             final_summary = "，".join(summary_logs)
             if not planned_actions:
                 final_summary = "批量规划完成，但没有产生任何需要执行的后续动作。"
-
             return ToolResult(
                 success=True,
                 summary=final_summary,
-                result=planned_actions  # 将 ActionSpec 列表放入 result 字段
+                follow_up_action=planned_actions
             )
         
         except Exception as e:

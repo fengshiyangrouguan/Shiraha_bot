@@ -5,6 +5,8 @@ from src.agent.world_model import WorldModel
 from src.cortices.reading.reading_data import ReadingData,Book
 from datetime import datetime
 from src.llm_api.factory import LLMRequestFactory
+from src.common.action_model.action_spec import ActionSpec
+from src.common.action_model.tool_result import ToolResult
 from src.common.logger import get_logger
 
 if TYPE_CHECKING:
@@ -137,9 +139,20 @@ class EnterLibraryTool(BaseTool):
             # 执行具体的阅读动作（如 start_read_chunk）
             try:
                 result = await self.cortex_manager.call_tool_by_name(tool_name, **params)
-                return f"{result}"
+                return ToolResult(
+                    success=True,
+                    summary= result,
+                )
+            # TODO:也改为形如qqcortex的agentloop为中心的调用模式
             except Exception as e:
-                return f"在执行 '{tool_name}' 时出错: {e}"
+                return ToolResult(
+                    success=False,
+                    summary="在执行 '{tool_name}' 时出错",
+                    error_message= e
+                )
 
         logger.info(f"决定离开书架。原因是{decision.get('reason', '无')}")
-        return f"{decision.get('reason', '无')}"
+        return ToolResult(
+            success=True,
+            summary=f"决定离开书架。原因是{decision.get('reason', '无')}",
+        )
