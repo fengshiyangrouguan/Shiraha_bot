@@ -87,29 +87,29 @@ class DeepChatSubAgent():
 1. **reply**: 发送/回复消息
 {{
     "action": "reply",
-    "parameters":{
+    "parameters":{{
         "reason": "发送消息的原因/意图"
-    }
+    }}
 }}
 
 2. **wait_for_message**: 保持沉默，持续观察聊天
 {{
     "action": "wait_for_message",
-    "parameters":{
+    "parameters":{{
         "reason": "沉默的理由"
-    }
+    }}
 }}
 
 3. **exit**: 退出深度聊天
 {{
     "action": "exit",
-    "parameters":{
+    "parameters":{{
         "reason": "退出的理由"
-        "follow_action":{
+        "follow_action":{{
             "action":"退出深度聊天后想要执行的行动名称，如果没有则输入“None”"
-            "parameters":"调用的工具需要的参数"
-        }
-    }
+            "parameters": {{<需要的参数>}}
+        }}
+    }}
 }}
 
 

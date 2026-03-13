@@ -11,6 +11,8 @@ from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
 from src.llm_api.factory import LLMRequestFactory
+from src.common.action_model.action_spec import ActionSpec
+from src.common.action_model.tool_result import ToolResult
 from src.common.logger import get_logger
 
 logger = get_logger("qq_chat")
@@ -68,7 +70,7 @@ class EnterQQAppTool(BaseTool):
 
     async def _get_conversation_info(self) -> tuple[Optional[str], Optional[QQChatData]]:
         """获取会话列表，并格式化为文本, 同时在下方插入未读消息（最多15条）。"""
-        qq_chat_data: QQChatData = await self.world_model.get_cortex_data("qq_chat_data")
+        qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
         all_conversations: List[ConversationInfoDB] = await self.database_manager.get_all(select(ConversationInfoDB))
         
         formatted_list = ["[会话列表]"]
@@ -98,17 +100,17 @@ class EnterQQAppTool(BaseTool):
                 formatted_list.extend(formatted_messages)
                 chat_stream.mark_as_read()
             
-        await self.world_model.save_cortex_data("qq_chat_data", qq_chat_data)
+        await self._world_model.save_cortex_data("qq_chat_data", qq_chat_data)
         return "\n".join(formatted_list), qq_chat_data
     
 
     async def _run_decide_planner(self, objective: str, context_str: str) -> Dict[str, Any]:
         """运行轻量判断器（LLM调用）来决定下一步行动"""
         # 模仿 main_planner, 获取可用工具
-        context = self.world_model.get_context_for_motive()
+        context = self._world_model.get_context_for_motive()
         available_tools = self.cortex_manager.get_tool_schemas(scope="qq_app")
-        time = self.world_model.get_current_time_string()
-        short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self.world_model.short_term_memory)
+        time = self._world_model.get_current_time_string()
+        short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self._world_model.short_term_memory)
 # 你的兴趣包括 {context['bot_interest']}。
         prompt = f"""
 你叫 {context['bot_name']}。
@@ -143,8 +145,10 @@ class EnterQQAppTool(BaseTool):
 ## 输出格式：
 ```json
 {{
-  "decision": "exit",
-  "reason": "<说明退出的原因>"
+    "action": "exit",
+    "parameters":{{
+        "reason": "退出的理由"
+    }}
 }}
 ```
 
@@ -156,9 +160,8 @@ class EnterQQAppTool(BaseTool):
 ## **输出格式:**
 ```json
 {{
-  "decision": "tool_call",
-  "tool_name": "<工具名称>",
-  "parameters": {{...}}
+    "action": "工具的名称",
+    "parameters": {{<需要的参数>}}
 }}
 ```
 ---
@@ -173,7 +176,7 @@ class EnterQQAppTool(BaseTool):
             json_str = response.strip().replace("```json", "").replace("```", "")
             return json.loads(json_str)
         except json.JSONDecodeError:
-            return {"decision": "exit", "reason": "无法解析决策器的输出。"}
+            return {"action": "exit", "reason": "无法解析决策器的输出。"}
 
 
  
@@ -181,27 +184,25 @@ class EnterQQAppTool(BaseTool):
         """主执行函数：收集信息 -> 决策 -> 执行或委派"""
         context_str, qq_chat_data = await self._get_conversation_info()
         if not qq_chat_data:
-            return "QQ未连接网络，先退出QQ了。"
+            return ToolResult(success=True, summary="QQ未连接网络，先退出QQ了。")
 
-        decision = await self._run_decide_planner(objective, context_str)
-        decision_type = decision.get("decision")
-        logger.info(f"原始决策：{decision}")
+        action = await self._run_decide_planner(objective, context_str)
+        action_name = action.get("action")
+        parameters = action.get("parameters", {})
+        logger.info(f"原始决策：{action_name}")
 
-        if decision_type == "tool_call":
-            tool_name = decision.get("tool_name")
-            parameters = decision.get("parameters", {})
-            if not tool_name:
-                return "行动无效：QQ卡了"
-            
-            try:
-                # 直接执行工具调用
-                result = await self.cortex_manager.call_tool_by_name(tool_name, **parameters)
-                return f"{result}"
-            except Exception as e:
-                return f"在执行 '{tool_name}' 时出错: {e}"
-        elif decision_type == "exit":
-            if decision.get("reason"):
-                reason = decision.get("reason")
-                return reason
-        else:
-            return "不知道该干什么，退出QQ应用了。"
+        if action_name == "exit":
+            if parameters.get("reason"):
+                reason = parameters.get("reason")
+                return ToolResult(success=True, summary=reason)
+            else:
+                return ToolResult(success=True, summary="不知道该干什么，退出QQ应用了。")
+        if not action_name:
+            return ToolResult(success=True, summary="行动无效：QQ卡了")
+        
+        try:
+            # 直接执行工具调用
+            tool_result:ToolResult = await self.cortex_manager.call_tool_by_name(action_name, **parameters)
+            return tool_result
+        except Exception as e:
+            return ToolResult(success=False, summary=f"在执行 '{action_name}' 时出错",error_message={e})      

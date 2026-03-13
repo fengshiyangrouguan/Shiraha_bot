@@ -30,7 +30,7 @@ class EnterDeepChatTool(BaseTool):
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_deep_chat",
-            "description": "当你认为一个会话非常重要或有趣，想更深度长时间参与/观察某聊天，或主动开启话题时，使用此工具。",
+            "description": "当你认为一个会话比较重要或有趣，想更深度长时间参与/观察某聊天，或主动开启话题时，使用此工具。",
             "parameters": {
                 "type": "object",
                 "properties": {
