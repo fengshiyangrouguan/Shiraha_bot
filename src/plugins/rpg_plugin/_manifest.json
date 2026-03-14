@@ -1,0 +1,29 @@
+{
+    "name": "rpg_plugin",
+    "display_name": "跑团插件 (RPG Plugin)",
+    "description": "一个用于进行跑团游戏的插件，可以管理世界状态和玩家状态。",
+    "version": "0.0.0",
+    "author": "fsyrg",
+    "enabled": true,
+    "tools": [
+        {
+            "name": "start_an_TRPG_game",
+            "description": "想要作为游戏主持人，和成员们开启一次TRPG跑团，看到这个插件时！！！你必须调用这个插件！！",
+            "scopes": ["qq_app","batch_plan"],
+            "parameters": [
+                {
+                    "name": "conversation_id",
+                    "type": "string",
+                    "description": "需要进行跑团的会话ID (一串数字编号ID)。",
+                    "required": true
+                },
+                {
+                    "name": "reason",
+                    "type": "string",
+                    "description": "启动跑团模式的原因",
+                    "required": true
+                }
+            ]
+        }
+    ]
+}

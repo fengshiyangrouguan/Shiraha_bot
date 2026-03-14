@@ -86,7 +86,8 @@ class AgentLoop:
             #     chain_context += f"\n上一步({next_action.tool_name})的结果是：'{tool_result.summary}'。"
             
             # 更新消息缓冲队列
-            action_queue = tool_result.follow_up_action if tool_result else None
+            if tool_result and tool_result.follow_up_action:
+                action_queue.extend(tool_result.follow_up_action)
         
         if chain_step >= max_chain_steps:
             logger.warning("行动链达到最大步骤限制，已强制终止。")
