@@ -1,7 +1,7 @@
 import re
 from typing import Dict, Tuple
 from src.common.logger import get_logger
-from src.core.version import CORE_VERSION
+CORE_VERSION = "0.0.0"
 # if TYPE_CHECKING:
 #     from src.plugin_system.base.base_plugin import BasePlugin
 

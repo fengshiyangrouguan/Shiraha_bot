@@ -9,7 +9,7 @@ import toml
 from src.common.logger import get_logger
 from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.base.plugin_info import PluginInfo
-from src.utils.version_comparator import VersionComparator
+from src.common.version_comparator import VersionComparator
 
 logger = get_logger("config_utils")
 

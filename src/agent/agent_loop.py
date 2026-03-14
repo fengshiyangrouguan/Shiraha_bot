@@ -139,7 +139,6 @@ class AgentLoop:
                 return
 
             self.world_model.motive = motive
-            logger.info(f"产生新动机: '{motive}'")
 
             # 2. 执行动机 (这现在会驱动整个行动链)
             await self._execute_motive_plan(motive)

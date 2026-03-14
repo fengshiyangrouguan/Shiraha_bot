@@ -59,7 +59,7 @@ class BatchQuickPlanTool(BaseTool):
                         "items": {
                             "type": "object",
                             "properties": {
-                                "conversation_id": {"type": "string", "description": "目标聊天 ID"},
+                                "conversation_id": {"type": "string", "description": "目标聊天对应的数字ID编号"},
                                 "intent": {"type": "string", "description": "对这个会话的初步行动意图"},
                             },
                         }
@@ -77,14 +77,17 @@ class BatchQuickPlanTool(BaseTool):
         mood = self._world_model.mood
         # plan_style = self._world_model.bot_plan_style
         time = self._world_model.get_current_time_string()
-        damper_result:dict = await self.social_damper.damp_intent(intent,history)
+        
         available_tools = self.cortex_manager.get_tool_schemas(scopes=["batch_plan"])
         available_tools_str = json.dumps(available_tools, ensure_ascii=False, indent=2)
-        if damper_result["should_damp"]:
-            intent_final=f"原始动机在当前语境突兀，社交阻尼器已介入。新动机规划为“{damper_result["damped_intent"]}”"
-            logger.info(f"社交阻尼器介入修正动机：{damper_result["damped_intent"]}")
-        else:
-            intent_final=f"你当前的行动意图是：{intent}"
+
+        # damper_result:dict = await self.social_damper.damp_intent(intent,history)
+        # if damper_result["should_damp"]:
+        #     intent_final=f"原始动机在当前语境突兀，社交阻尼器已介入。新动机规划为“{damper_result["damped_intent"]}”"
+        #     logger.info(f"社交阻尼器介入修正动机：{damper_result["damped_intent"]}")
+        # else:
+
+        intent_final=f"你当前的行动意图是：{intent}"
         if conversation_info.conversation_type == "group":
             chat_target = f"你正在群聊中与群友聊天。"
         else:
@@ -200,7 +203,7 @@ f"""
                         summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，我决定不参与聊天，原因是{reason}")
                     elif act_name == "reply":
                         result = await self.replyer.execute(reason,chat_stream)
-                        summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，{result}")
+                        summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，我简单发送了消息，{result}")
                         # 执行回复发送...
                     elif act_name == "deep_chat":
                         deep_chat_tool_result:ToolResult = await self.deep_chat_agent.run(reason,chat_stream)
@@ -215,8 +218,6 @@ f"""
 
             # 4. 循环结束，返回最终结果
             final_summary = "，".join(summary_logs)
-            if not planned_actions:
-                final_summary = "批量规划完成，但没有产生任何需要执行的后续动作。"
             return ToolResult(
                 success=True,
                 summary=final_summary,

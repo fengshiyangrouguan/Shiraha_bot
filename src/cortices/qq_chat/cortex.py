@@ -12,6 +12,7 @@ from .chat.event_processor import QQChatEventProcessor
 from src.cortices.manager import CortexManager
 from .chat.sticker_system.sticker_manager import StickerManager
 from src.extensions.social_damper import SocialDamper
+from .api import QQChatAPI
 
 from src.common.di.container import container
 from src.platform.platform_manager import PlatformManager
@@ -38,6 +39,9 @@ class QQChatCortex(BaseCortex):
         self.sticker_manager: Optional[StickerManager] = None
         self.social_damper: Optional[SocialDamper] = None
 
+    @property
+    def cortex_name(self) -> str:
+        return "qq_chat"
 
     async def setup(self, world_model: WorldModel, config: CortexConfigSchema, cortex_manager: CortexManager):
         """
@@ -72,6 +76,12 @@ class QQChatCortex(BaseCortex):
 
         # 3. 启动事件处理器
         self._process_events_task = asyncio.create_task(self.event_processor.run())
+
+        # 4. 注册 API Hub
+        if self.adapter:
+            api_hub = QQChatAPI(self.adapter, cortex_manager)
+            container.register_factory(QQChatAPI, lambda: api_hub)
+            logger.info("QQChatAPI 已成功注册到容器。")
 
         logger.info(f"启动完成。")
 

@@ -242,4 +242,44 @@ class PluginManager:
 
     def get_plugin(self, name: str) -> BasePlugin | None:
         return self._plugins.get(name)
+
+    def get_all_tools_with_info(self) -> List[Tuple[Type[BaseTool], BasePlugin, ToolInfo]]:
+        """返回所有已注册的工具及其完整的元信息（包含scopes）"""
+        return list(self._tools.values())
+
+    def get_callable_tool_schemas_for_scope(self, cortex_scope: str) -> List[Dict[str, Any]]:
+        """
+        获取指定Cortex作用域下所有可用的、非钩子工具的Schema。
+        """
+        tool_schemas = []
+        for _tool_cls, _plugin, tool_info in self._tools.values():
+            tool_scopes = tool_info.scopes or ["global"]
+            
+            # 检查是否是钩子
+            is_hook = any(s.startswith("hook:") for s in tool_scopes)
+            if is_hook:
+                continue
+
+            # 检查作用域是否匹配
+            if "global" in tool_scopes or cortex_scope in tool_scopes:
+                tool_schemas.append(self._build_tool_definition(tool_info))
+        
+        return tool_schemas
+
+    async def execute_tool_by_name(self, name: str, **kwargs) -> Any:
+        """
+        按名称查找、实例化并执行插件工具。
+        这是由CortexManager调用的插件工具执行的统一入口。
+        """
+        instance = self.create_tool_instance(name)
+        if not instance:
+            logger.error(f"尝试执行一个未知的插件工具: {name}")
+            return {"error": f"Unknown plugin tool: {name}"}
+        
+        try:
+            # 假设所有插件工具的execute方法都是async
+            return await instance.execute(**kwargs)
+        except Exception as e:
+            logger.error(f"执行插件工具 '{name}' 时发生错误: {e}", exc_info=True)
+            return {"error": f"Error executing tool '{name}': {str(e)}"}
     

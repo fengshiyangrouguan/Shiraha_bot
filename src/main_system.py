@@ -18,6 +18,9 @@ from src.cortices.manager import CortexManager
 from src.platform.platform_manager import PlatformManager # 导入 PlatformManager
 
 from src.agent.world_model import WorldModel # Import WorldModel
+from src.plugin_system.core.plugin_loader import PluginLoader
+from src.plugin_system.core.plugin_manager import PluginManager
+from pathlib import Path
 
 logger = get_logger("main_system")
 
@@ -30,7 +33,10 @@ class MainSystem:
         self.agent_loop: Optional[AgentLoop] = None # Initialize as Optional
         self.world_model: Optional[WorldModel] = None
         self.cortex_manager: Optional[CortexManager] = None
-        self.platform_manager: Optional[PlatformManager] = None # 新增：PlatformManager 实例
+        self.platform_manager: Optional[PlatformManager] = None
+        self.plugin_loader: Optional[PluginLoader] = None
+        self.plugin_manager: Optional[PluginManager] = None
+
 
     async def initialize(self):
         """初始化主系统"""
@@ -38,6 +44,15 @@ class MainSystem:
         logger.info(f"正在唤醒 {config_bot.persona.bot_name}......")
         
         await self._init_components()
+
+        # 初始化插件系统
+        logger.info("--- 正在初始化插件系统 ---")
+        plugin_loader = container.resolve(PluginLoader)
+        plugin_manager = container.resolve(PluginManager)
+        plugin_infos = plugin_loader.load_plugins()
+        plugin_manager.initialize_from_infos(plugin_infos)
+        logger.info("--- 插件系统初始化完成 ---")
+
 
         # Load all cortices after core components are initialized
         if self.cortex_manager:
@@ -62,6 +77,11 @@ class MainSystem:
         self.database_manager = DatabaseManager()
         await self.database_manager.initialize_database()  # 初始化数据库
 
+        self.plugin_loader = PluginLoader(plugin_root=Path("src/plugins"))
+        self.plugin_manager = PluginManager()
+        container.register_instance(PluginLoader, self.plugin_loader)
+        container.register_instance(PluginManager, self.plugin_manager)
+        
         self.cortex_manager = CortexManager()
         
         container.register_instance(WorldModel, self.world_model)
@@ -69,6 +89,7 @@ class MainSystem:
         container.register_instance(DatabaseManager, self.database_manager)
         container.register_instance(PlatformManager, self.platform_manager) # 注册 PlatformManager
         container.register_instance(CortexManager, self.cortex_manager)
+        
         
 
         self.agent_loop = AgentLoop() # AgentLoop 的实例化将由用户自行协调其参数传递

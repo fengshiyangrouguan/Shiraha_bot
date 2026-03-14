@@ -10,7 +10,7 @@ from src.common.logger import get_logger
 from src.plugin_system.base.parameter_info import ToolParameter
 from src.plugin_system.base.tool_info import ToolInfo
 from src.plugin_system.base.plugin_info import PluginInfo, PythonDependency
-from src.utils.version_comparator import VersionComparator
+from src.common.version_comparator import VersionComparator
 
 logger = get_logger("manifest_utils")
 
@@ -197,11 +197,15 @@ class ManifestLoader:
                     )
                 )
 
+            scopes = tool.get("scopes")
+
             info.tools.append(
                 ToolInfo(
                     name=name,
                     description=description,
                     tool_parameters=parameters,
+                    scopes=scopes,
+                    plugin_name=info.name,
                 )
             )
 

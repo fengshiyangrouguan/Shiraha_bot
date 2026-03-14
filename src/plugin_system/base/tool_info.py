@@ -45,11 +45,14 @@ class ToolInfo:
     enabled: bool = True  # 是否启用
     plugin_name: str = ""  # 所属插件名称
     is_built_in: bool = False  # 是否为内置组件
+    scopes: List[str] = field(default_factory=lambda: ["global"])  # 工具的作用域
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
     tool_parameters: List[ToolParameter] = field(default_factory=list)
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+        if not self.scopes:
+            self.scopes = ["global"]
 
 

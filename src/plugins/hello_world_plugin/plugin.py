@@ -1,0 +1,51 @@
+# src/plugins/hello_world_plugin/plugin.py
+
+from typing import Dict, Any, List, Tuple, Type
+from src.plugin_system.base import BasePlugin, BaseTool, ToolInfo
+from src.common.di.container import container
+from src.common.logger import get_logger
+from src.cortices.qq_chat.api import QQChatAPI
+
+logger = get_logger("hello_world_plugin")
+
+class SendHelloWorldTool(BaseTool):
+    """
+    一个简单的工具，用于发送 "Hello, World!"。
+    """
+    async def execute(self, conversation_id: str, conversation_type: str, **kwargs) -> Dict[str, Any]:
+        """
+        执行发送消息的逻辑。
+        """
+        logger.info(f"准备向 {conversation_id} ({conversation_type}) 发送 Hello World。")
+        try:
+            # 从容器中解析 API Hub
+            api = container.resolve(QQChatAPI)
+            if not api:
+                return {"error": "无法获取 QQChatAPI，可能是 QQChatCortex 未启动。"}
+            
+            # 调用 API 发送消息
+            await api.send_message(
+                conversation_id=conversation_id,
+                content="SAMURAIIIIIIIII!!!!!!!",
+                conversation_type=conversation_type
+            )
+            
+            summary = f"成功向 {conversation_id} 发送了 'Hello, World!'。"
+            logger.info(summary)
+            return {"result": summary}
+            
+        except Exception as e:
+            logger.error(f"发送 Hello World 消息时出错: {e}", exc_info=True)
+            return {"error": str(e)}
+
+class HelloWorldPlugin(BasePlugin):
+    """
+    一个用于演示的简单插件。
+    """
+    def get_plugin_tools(self) -> List[Tuple[ToolInfo, Type[BaseTool]]]:
+        """
+        获取插件包含的工具列表
+        """
+        send_hello_world_info = self.get_declared_tool_info("send_hello_world")
+        return [(send_hello_world_info, SendHelloWorldTool)]
+

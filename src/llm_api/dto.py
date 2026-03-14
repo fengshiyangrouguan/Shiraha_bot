@@ -6,7 +6,7 @@ class ToolCall(BaseModel):
     """
     LLM 请求调用工具时，系统内部使用的标准化数据结构。
     """
-    # call_id: str
+    #TODO:把所有工具的调用改为ToolCall标准类
     tool_name: str
     parameters: Optional[Dict[str, Any]] = None
 
