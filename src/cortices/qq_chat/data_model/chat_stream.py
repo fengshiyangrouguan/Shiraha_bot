@@ -117,14 +117,11 @@ class QQChatStream(BaseModel):
             event_metadata=event.event_data.metadata
         )
         await self.database_manager.upsert(event_db)
-        if self.conversation_info.conversation_type == "group":
-            if self._msg_count > self._new_plan_msg_threshold_for_group:
-                self._new_message_event.set()
-                self._msg_count = 0
-        else:
-            if self._msg_count > self._new_plan_msg_threshold_for_private:
-                self._new_message_event.set()
-                self._msg_count = 0
+
+        #TODO:暂时删掉了群聊和私聊的不同规划周期，因为插件系统的的跑团问题
+        if self._msg_count > self._new_plan_msg_threshold_for_private:
+            self._new_message_event.set()
+            self._msg_count = 0
 
         logger.debug(f"EventDB (ID: {event_db.event_id}) 已永久化存储。")
         logger.debug(f"事件 ({event.event_type}) 针对流 ({self.stream_id}) 处理完成。")

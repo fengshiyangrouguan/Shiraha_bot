@@ -1,5 +1,5 @@
 # src/cortices/qq_chat/api.py
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.common.event_model.info_data import ConversationInfo
 
@@ -34,3 +34,11 @@ class QQChatAPI:
         )
         
         await self.adapter.message_api.send_text(convo_info, content)
+
+    async def send_text(self, conversation_info: ConversationInfo, text: str, face_id: int | None = None,reply_id: int | None = None,at_id: Any | None = None):
+        await self.adapter.message_api.send_text(
+                        conversation_info, 
+                        text, 
+                        face_id,
+                        reply_id,
+                        at_id)

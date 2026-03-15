@@ -211,6 +211,10 @@ f"""
                         summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，{summary}")
                         if deep_chat_tool_result.follow_up_action:
                             planned_actions.append(deep_chat_tool_result.follow_up_action)
+                    else:
+                        logger.info(f"检测到外部工具动作: {act_name}，准备放入后续执行队列")
+                        planned_actions.append(action)
+                        summary_logs.append(f"正在切换至 {act_name} 模式处理会话")
 
                 except Exception as e:
                     summary_logs.append(f"在“{conversation_info.conversation_name}”聊天中，行动解析失败了，报错:{e}")

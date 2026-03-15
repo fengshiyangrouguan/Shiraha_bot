@@ -1,0 +1,13 @@
+{
+  "skill_id": "collect_players",
+  "name": "玩家招募器",
+  "version": "1.0.0",
+  "description": "处理跑团初始阶段的玩家报名与名单管理",
+  "entrypoints": {
+    "save_final_list": "scripts/save_list.py"
+  },
+  "resources": [
+    "references/world_summary.md"
+  ],
+  "permissions": ["read_resource", "execute_script"]
+}

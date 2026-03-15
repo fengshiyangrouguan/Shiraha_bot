@@ -1,0 +1,16 @@
+{
+  "skill_id": "character_creator",
+  "name": "角色创建器",
+  "version": "0.0.0",
+  "description": "负责引导玩家完成身份选择、装备分配及数据录入",
+  "entrypoints": {
+    "init_card": "scripts/init_player.py",
+    "update_stats": "scripts/update_csv.py"
+  },
+  "resources": [
+    "references/professions.json",
+    "references/equipments.json",
+    "references/relics.md"
+  ],
+  "permissions": ["read_resource", "execute_script"]
+}
