@@ -1,0 +1,24 @@
+# weather_plugin - 配置文件
+# 基于 Open-Meteo 的城市实时天气查询插件。
+# 配置版本: 1.0.0
+
+# 插件基础信息
+[plugin]
+
+# 插件名称
+name = "weather_plugin"
+
+# 插件版本
+version = "1.0.0"
+
+# 是否启用插件
+enabled = true
+
+
+# 时间显示相关设置
+[time]
+
+# 时间显示格式
+format = "%Y-%m-%d %H:%M:%S"
+
+
