@@ -19,9 +19,9 @@
   "tools": [
     {
       "name": "get_current_weather",
-      "description": "查询指定城市的当前天气信息。",
+      "description": "查询指定城市的当前天气信息。到该工具之后必须调用！！！！",
       "scopes": [
-        "global","qq_chat"
+        "global","qq_app","quick_reply"
       ],
       "parameters": [
         {

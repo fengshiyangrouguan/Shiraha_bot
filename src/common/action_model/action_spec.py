@@ -1,15 +1,25 @@
-# src/common/action_model/action_spec.py
-from dataclasses import dataclass
-from typing import Dict, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
 
 @dataclass
 class ActionSpec:
     """
-    行动规约：一个对工具调用的完整、独立的描述。
-    这个数据类在整个系统中被复用，作为规划器和工具链之间传递“行动指令”的标准格式。
-    """
-    tool_name: str
-    """要调用的工具的名称。"""
+    统一动作定义。
 
-    parameters: Dict[str, Any]
-    """调用该工具所需的参数。"""
+    当前默认 action_type 为 tool，后续也可以扩展到 command / control 等其他动作类型。
+    """
+
+    tool_name: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    action_type: str = "tool"
+    source: str = "unknown"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return self.tool_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.tool_name = value

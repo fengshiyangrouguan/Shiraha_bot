@@ -23,10 +23,8 @@ if TYPE_CHECKING:
 
 class EnterQQAppTool(BaseTool):
     """
-    该工具模拟用户“打开QQ”的动作。
-    它会首先获取所有会话的概览（包括未读消息情况），然后结合来自更高层级的意图，
-    通过一个内置的“决策器”来智能判断下一步行动。
-    它现在可以直接处理简单的工具调用（如发送消息），或将复杂任务（如批量处理）委派出去。
+    编排型工具：模拟打开QQ，查看全局会话状态，并规划一系列后续行动指令。
+    该工具不再直接执行终端动作，而是返回 ActionSpec 列表由外层统一编排。
     """
 
     def __init__(self, cortex_manager: "CortexManager"):
@@ -36,14 +34,15 @@ class EnterQQAppTool(BaseTool):
         self.llm_request_factory = container.resolve(LLMRequestFactory)
 
     @property
-    def scope(self) -> str:
-        return ["main","deep_chat"] 
+    def scope(self) -> List[str]:
+        # 允许在 main 和 deep_chat 作用域下被调用
+        return ["main", "deep_chat"]
 
     @property
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_qq_app",
-            "description": "打开/回到QQ的主页面，可查看会话列表和未读消息",
+            "description": "打开/回到QQ的主页面，查看全局会话列表和未读消息并规划后续行动。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -57,149 +56,140 @@ class EnterQQAppTool(BaseTool):
         }
 
     def _format_messages(self, messages: List[EventDB]) -> List[str]:
-        """Formats a list of EventDB messages into readable strings."""
+        """将数据库消息格式化为可读字符串。"""
         formatted_messages = []
         for msg in messages:
-            sender_cardname = msg.user_cardname or "未知用户"
             sender_nickname = msg.user_nickname or "未知用户"
-            timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(msg.time))
-            content = msg.event_content or "[消息内容为空]"
-            line = f"    - [{timestamp_str}] {sender_nickname}: {content}"
-            formatted_messages.append(line)
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime(msg.time))
+            content = msg.event_content or "[内容为空]"
+            formatted_messages.append(f"    - [{timestamp_str}] {sender_nickname}: {content}")
         return formatted_messages
 
-    async def _get_conversation_info(self) -> tuple[Optional[str], Optional[QQChatData]]:
-        """获取会话列表，并格式化为文本, 同时在下方插入未读消息（最多15条）。"""
+    async def _get_global_context_str(self) -> str:
+        """获取所有会话的未读状态概览。"""
         qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
         all_conversations: List[ConversationInfoDB] = await self.database_manager.get_all(select(ConversationInfoDB))
         
-        formatted_list = ["[会话列表]"]
+        formatted_list = ["## 当前QQ会话列表概览:"]
         
         for conv in all_conversations:
-            stream_id = f"{conv.conversation_id}"
-            unread_count = 0
+            stream_id = str(conv.conversation_id)
             chat_stream = qq_chat_data.streams.get(stream_id) if qq_chat_data else None
-            if chat_stream:
-                unread_count = chat_stream.unread_count
+            unread_count = chat_stream.unread_count if chat_stream else 0
             
             type_str = "群聊" if conv.conversation_type == "group" else "私聊"
-            messages_to_fetch = 0
-            if unread_count > 0:
-                messages_to_fetch = min(unread_count, 15)
-                unread_str = f"，有 {unread_count} 条未读消息" + (f" (仅显示最新的{messages_to_fetch}条)" if unread_count > 15 else "")
-            else:
-                unread_str = "，无未读消息"
-
-            formatted_list.append(f"- [{type_str}] {conv.conversation_name} (ID: {stream_id}){unread_str}")
-
-            if messages_to_fetch > 0 and chat_stream:
-                query = (select(EventDB).where(EventDB.conversation_id == chat_stream.conversation_info.conversation_id).order_by(EventDB.time.desc()).limit(messages_to_fetch))
-                messages_desc: List[EventDB] = await self.database_manager.get_all(query)
-                messages = list(reversed(messages_desc))
-                formatted_messages = self._format_messages(messages)
-                formatted_list.extend(formatted_messages)
-                chat_stream.mark_as_read()
+            unread_info = f"【{unread_count}条未读】" if unread_count > 0 else "【已读】"
             
-        await self._world_model.save_cortex_data("qq_chat_data", qq_chat_data)
-        return "\n".join(formatted_list), qq_chat_data
-    
+            formatted_list.append(f"- [{type_str}] {conv.conversation_name} (ID: {stream_id}) {unread_info}")
 
-    def _build_prompt(self, objective: str, context_str: str) -> Dict[str, Any]:
-        """运行轻量判断器（LLM调用）来决定下一步行动"""
-        # 模仿 main_planner, 获取可用工具
+            # 如果有未读消息，提取最近几条辅助决策
+            if unread_count > 0 and chat_stream:
+                query = (select(EventDB)
+                         .where(EventDB.conversation_id == chat_stream.conversation_info.conversation_id)
+                         .order_by(EventDB.time.desc())
+                         .limit(min(unread_count, 5))) # 仅查看最近5条辅助规划
+                messages_desc = await self.database_manager.get_all(query)
+                formatted_list.extend(self._format_messages(list(reversed(messages_desc))))
+        return "\n".join(formatted_list)
+
+    def _build_planner_prompt(self, objective: str, context_str: str) -> str:
+        """构建中文编排提示词。"""
         context = self._world_model.get_context_for_motive()
+        # 获取 qq_app 作用域下的子工具（如 batch_quick_plan, quick_reply 等）
         available_tools = self.cortex_manager.get_tool_schemas(scopes=["qq_app"])
-        time = self._world_model.get_current_time_string()
-        short_term_memory = "以下是按时间顺序排列的近期活动记忆：\n"+"\n".join(self._world_model.short_term_memory)
-# 你的兴趣包括 {context['bot_interest']}。
-        prompt = f"""
-你叫 {context['bot_name']}。
-你是 {context['bot_identity']}。
-你的性格是 {context['bot_personality']}，
-
-{time}
-此刻你的心理状态是：{context['mood']}。
-
-你的近期活动记忆：
-{short_term_memory}
+        # 过滤掉自身
+        available_tools = [t for t in available_tools if t.get("function", {}).get("name") != "enter_qq_app"]
         
-现在你正在qq软件中浏览会话列表，正在规划下一步行动。
-你当前的总意图是："{objective}"
+        time_str = self._world_model.get_current_time_string()
+        memory_str = "\n".join(self._world_model.short_term_memory)
 
+        prompt = f"""
+你叫 {context['bot_name']}，身份是 {context['bot_identity']}。
+性格设定：{context['bot_personality']}
+当前情绪：{context['mood']}
+当前时间：{time_str}
+
+## 近期记忆：
+{memory_str}
+
+## 当前任务目标：
+"{objective}"
+
+## QQ全局实时状态：
 {context_str}
 
-## **社交规范注意**
-1.**保持随性**：你没有义务回应每一句未读消息。如果话题不投机/不感兴趣/和你没有关系，你可以决定旁观不回复，或者也可以按照你的性格认知下的社交礼仪去决定怎么做。
-2.不要对表情包进行回复
+## 社交规划准则：
+1. **需要外部支持**：如果回复需要外部事实或工具结果的支持，你应该先调用相关工具，最后再执行回复。
+2. **随性自然**：如果对聊天不感兴趣或与你无关，可以直接 `exit`。不要像机器人一样强迫回复。
+3. **多步规划**：你可以一次性规划多个动作。例如：先调用某个工具查询信息，再进行回复。
 
-## 决策规则
-根据你的意图和上面的会话列表，从以下选项中选择一个最合适的行动，并严格按照JSON格式输出。
-
-你可以选择以下决策行动：
-
-## **直接退出 (`exit`)**: 如果因某种原因不想聊天或无法聊天。    
-## 输出格式：
-```json
-{{
-    "action": "exit",
-    "parameters":{{
-        "reason": "退出的理由"
-    }}
-}}
-```
-
-其他可用行动列表：
-```json
+## 可用的 Action 选项：
+- **exit**: 退出QQ，不进行任何操作。参数：{{"reason": "理由"}}
+- **其他可用工具**:
 {json.dumps(available_tools, ensure_ascii=False, indent=2)}
-```
 
-## **输出格式:**
-```json
+## 输出格式（严格 JSON）：
 {{
-    "action": "工具的名称",
-    "parameters": {{<需要的参数>}}
+  "actions": [
+    {{
+      "action": "工具名",
+      "parameters": {{ ... }}
+    }}
+  ]
 }}
-```
----
-请严格按照以上JSON格式之一输出你的决策。
-"""     
-
+"""
         return prompt
 
- 
-    async def execute(self, objective: str) -> ToolResult:
-        """主执行函数：收集信息 -> 决策 -> 执行或委派"""
-        context_str, qq_chat_data = await self._get_conversation_info()
-        if not qq_chat_data:
-            return ToolResult(success=True, summary="QQ未连接网络，先退出QQ了。")
-
-        prompt = self._build_prompt(objective, context_str)
-        llm_factory = self.llm_request_factory
-        llm_request = llm_factory.get_request("planner")
-        content, model_name = await llm_request.execute(prompt=prompt)
-        response = content.strip()
-        logger.info(f"原始决策：{response}")
-
+    async def execute(self, objective: str, **kwargs) -> ToolResult:
+        """主执行函数：分析全局 -> 批量编排 -> 返回动作序列"""
         try:
-            json_str = response.strip().replace("```json", "").replace("```", "")
-            action:dict = json.loads(json_str)
-            action_name = action.get("action")
-            parameters:dict = action.get("parameters", {})
-            if action_name == "exit":
-                if parameters.get("reason"):
-                    reason = parameters.get("reason")
-                    return ToolResult(success=True, summary=reason)
-                else:
-                    return ToolResult(success=True, summary="不知道该干什么，退出QQ应用了。")
-            if not action_name:
-                return ToolResult(success=True, summary="行动无效：QQ卡了")
-        except json.JSONDecodeError:
-            logger.error(f"解析JSON错误")
-            return ToolResult(success=False, summary=f"解析规划出错")  
-        
-        try:
-            # 直接执行工具调用
-            tool_result:ToolResult = await self.cortex_manager.call_tool_by_name(action_name, **parameters)
-            return tool_result
+            # 1. 采集全局上下文
+            context_str = await self._get_global_context_str()
+            
+            # 2. 调用 LLM 进行多步规划
+            prompt = self._build_planner_prompt(objective, context_str)
+            llm_request = self.llm_request_factory.get_request("planner")
+            content, _ = await llm_request.execute(prompt=prompt)
+            
+            # 3. 解析编排结果
+            res_text = content.strip()
+            if "```" in res_text:
+                res_text = res_text.split("```json")[-1].split("```")[0].strip()
+            
+            plan_data = json.loads(res_text)
+            action_items = plan_data.get("actions", [])
+            
+            if not action_items:
+                return ToolResult(success=True, summary="没有规划任何行动，直接退出。")
+
+            planned_specs: List[ActionSpec] = []
+            summary_parts = []
+
+            for item in action_items:
+                name = item.get("action")
+                params = item.get("parameters", {})
+                
+                if name == "exit":
+                    summary_parts.append(f"决定退出: {params.get('reason', '无')}")
+                    continue
+                
+                # 构造 ActionSpec
+                spec = ActionSpec(
+                    tool_name=name,
+                    parameters=params,
+                    source="enter_qq_app"
+                )
+                planned_specs.append(spec)
+                summary_parts.append(f"规划了动作: {name}")
+
+            final_summary = " | ".join(summary_parts) if summary_parts else "规划完成"
+            
+            return ToolResult(
+                success=True,
+                summary=final_summary,
+                follow_up_action=planned_specs
+            )
+
         except Exception as e:
-            return ToolResult(success=False, summary=f"在执行 '{action_name}' 时出错",error_message=e)      
+            logger.error(f"EnterQQApp 编排失败: {e}", exc_info=True)
+            return ToolResult(success=False, summary="QQ应用编排逻辑出错", error_message=str(e))

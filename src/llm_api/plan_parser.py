@@ -81,7 +81,9 @@ class PlanParser:
         try:
             action_spec = ActionSpec(
                 tool_name=parsed["action"]["tool_name"],
-                parameters=parsed["action"]["parameters"]
+                parameters=parsed["action"]["parameters"],
+                action_type=parsed["action"].get("action_type", "tool"),
+                source="main_planner",
             )
 
             plan_result = PlanResult(

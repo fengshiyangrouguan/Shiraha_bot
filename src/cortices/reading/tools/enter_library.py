@@ -138,10 +138,13 @@ class EnterLibraryTool(BaseTool):
             params = decision.get("parameters", {})
             # 执行具体的阅读动作（如 start_read_chunk）
             try:
-                result = await self.cortex_manager.call_tool_by_name(tool_name, **params)
+                action = ActionSpec(tool_name=tool_name, parameters=params)
+                result = await self.cortex_manager.execute_action(action)
                 return ToolResult(
-                    success=True,
-                    summary= result,
+                    success=result.success,
+                    summary=result.summary,
+                    error_message=result.error_message,
+                    follow_up_action=result.follow_up_action,
                 )
             # TODO:也改为形如qqcortex的agentloop为中心的调用模式
             except Exception as e:
