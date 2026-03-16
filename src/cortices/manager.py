@@ -191,6 +191,12 @@ class CortexManager:
     def get_tool_schemas(self, scopes: List[str]) -> List[Dict]:
         return self._get_tool_registry().get_tool_schemas(scopes)
 
+    def get_tool_descriptor(self, tool_name: str) -> Optional[ToolDescriptor]:
+        registered = self._get_tool_registry().get_tool(tool_name)
+        if not registered:
+            return None
+        return registered.descriptor
+
     def get_collected_capability_descriptions(self) -> List[str]:
         return self._collected_capability_descriptions
 

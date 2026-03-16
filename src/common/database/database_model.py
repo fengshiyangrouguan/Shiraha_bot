@@ -146,3 +146,84 @@ class BookDB(SQLModel, table=True):
     last_read_position: Optional[int] = Field(default=0)
     last_read_time: Optional[float] = Field(default=None)
     is_finished_reading: Optional[bool] = Field(default=False)
+
+
+class BehaviorHistoryDB(SQLModel, table=True):
+    """Long-term episodic behavior history extracted from completed action chains."""
+
+    __tablename__ = "behavior_history"
+
+    memory_id: str = Field(primary_key=True)
+    created_at: float = Field(index=True)
+    summary: str = Field(sa_column=Column(Text, nullable=False))
+
+    motive: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    initial_plan_reason: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    source_cortex: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    scene: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    memory_type: Optional[str] = Field(
+        default="behavior",
+        sa_column=Column(Text, nullable=True),
+    )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True, index=True),
+    )
+
+    source_tools: Optional[List[str]] = Field(
+        sa_column=Column(JSON),
+        default=None,
+    )
+    keywords: Optional[List[str]] = Field(
+        sa_column=Column(JSON),
+        default=None,
+    )
+    tags: Optional[List[str]] = Field(
+        sa_column=Column(JSON),
+        default=None,
+    )
+    importance: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+
+
+class ExpressionPatternDB(SQLModel, table=True):
+    """Expression style patterns learned from conversation history."""
+
+    __tablename__ = "expression"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    situation: str = Field(sa_column=Column(Text, nullable=False))
+    style: str = Field(sa_column=Column(Text, nullable=False))
+    count: int = Field(default=1)
+    last_active_time: float = Field(index=True)
+    chat_id: str = Field(index=True)
+    context: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    create_date: Optional[float] = Field(default=None, index=True)
+    up_content: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    content_list: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+        
+    
+    

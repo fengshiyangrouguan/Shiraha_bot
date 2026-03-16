@@ -102,3 +102,5 @@ logs/
 configs/
 maibot/
 test/book_test/
+express/
+astrbot_plugin_self_learning-main/

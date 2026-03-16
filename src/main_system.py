@@ -13,6 +13,9 @@ from src.common.logger import get_logger
 from src.common.tool_registry import ToolRegistry
 from src.cortices.manager import CortexManager
 from src.llm_api.factory import LLMRequestFactory
+from src.memory_system.repositories.expression_pattern_repository import ExpressionPatternRepository
+from src.memory_system.services.expression_learning_service import ExpressionLearningService
+from src.memory_system.services.expression_selector_service import ExpressionSelectorService
 from src.platform.platform_manager import PlatformManager
 from src.plugin_system.core.plugin_loader import PluginLoader
 from src.plugin_system.core.plugin_manager import PluginManager
@@ -66,6 +69,16 @@ class MainSystem:
         self.database_manager = DatabaseManager()
         await self.database_manager.initialize_database()
         self.tool_registry = ToolRegistry()
+        self.expression_pattern_repository = ExpressionPatternRepository(self.database_manager)
+        self.expression_learning_service = ExpressionLearningService(
+            self.database_manager,
+            self.llm_request_factory,
+        )
+        self.expression_selector_service = ExpressionSelectorService(
+            self.expression_pattern_repository,
+            self.llm_request_factory,
+            container.resolve(BotConfig),
+        )
 
         self.plugin_loader = PluginLoader(plugin_root=Path("src/plugins"))
         self.plugin_manager = PluginManager(tool_registry=self.tool_registry)
@@ -77,6 +90,9 @@ class MainSystem:
         container.register_instance(WorldModel, self.world_model)
         container.register_instance(LLMRequestFactory, self.llm_request_factory)
         container.register_instance(DatabaseManager, self.database_manager)
+        container.register_instance(ExpressionPatternRepository, self.expression_pattern_repository)
+        container.register_instance(ExpressionLearningService, self.expression_learning_service)
+        container.register_instance(ExpressionSelectorService, self.expression_selector_service)
         container.register_instance(PlatformManager, self.platform_manager)
         container.register_instance(CortexManager, self.cortex_manager)
 
