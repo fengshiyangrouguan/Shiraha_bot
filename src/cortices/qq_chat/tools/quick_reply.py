@@ -78,10 +78,6 @@ class QuickReplyTool(BaseTool):
         schemas = self.cortex_manager.get_tool_schemas(["quick_reply", "global"])
         filtered: List[Dict[str, Any]] = []
         for schema in schemas:
-            function_def = schema.get("function", {})
-            name = function_def.get("name")
-            if name == "batch_quick_plan":
-                continue
             filtered.append(schema)
         return filtered
 
@@ -123,7 +119,7 @@ class QuickReplyTool(BaseTool):
 1. decision:
 - exit: 当前话题已自然收束，直接退出。
 - quick_reply: 还需要再来一轮轻量回复。
-- deep_chat: 当前话题变复杂了，应交给 enter_deep_chat。
+- deep_chat: 调用enter_deep_chat深度参与聊天。
 2. actions:
 - 可以追加调用当前作用域下的其他工具。
 - 如果需要先查信息、再做后续回复，就把工具的名字和参数写进 actions。
@@ -141,7 +137,7 @@ class QuickReplyTool(BaseTool):
 只输出 JSON：
 {{
   "decision": "exit | quick_reply | deep_chat",
-  "reason": "给 quick_reply 或 deep_chat 的简短原因；如果 decision=exit 可以留空",
+  "reason": "选择这个决定的原因，简单写下你的思维决策过程",
   "actions": [
     {{
       "action": "工具名",

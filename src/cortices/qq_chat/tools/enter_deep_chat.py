@@ -1,5 +1,5 @@
 # src/cortices/qq_chat/tools/enter_deep_chat.py
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING, List
 import json
 from src.common.action_model.tool_result import ToolResult
 from src.cortices.tools_base import BaseTool
@@ -12,6 +12,9 @@ from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.cortices.qq_chat.cortex import QQChatCortex
 from src.llm_api.factory import LLMRequestFactory
 from src.cortices.qq_chat.chat.replyer import QQReplyer
+from src.common.logger import get_logger
+
+logger = get_logger("qq_deep_chat")
 
 if TYPE_CHECKING:
     
@@ -34,14 +37,14 @@ class EnterDeepChatTool(BaseTool):
         self.deep_chat_agent = DeepChatSubAgent(adapter=self.adapter,cortex=self.cortex,replyer=self.replyer)
 
     @property
-    def scope(self) -> str:
-        return "batch_plan"
+    def scope(self) -> List[str]:
+        return ["qq_app","quick_reply"]
 
     @property
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_deep_chat",
-            "description": "当你认为一个会话比较重要或有趣，想更深度长时间参与/观察某聊天，或主动开启话题时，使用此工具。",
+            "description": "当你想更深度长时间参与/观察某聊天/对话，或主动开启话题时，使用此工具。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -63,9 +66,10 @@ class EnterDeepChatTool(BaseTool):
         执行方法：获取会话流，并启动子智能体。
         """
         # 1. 获取会话上下文
-        qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
-        chat_stream = qq_chat_data.get_or_create_stream_by_id(conversation_id, self.database_manager)
         
+        qq_chat_data: QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
+        chat_stream = await qq_chat_data.get_or_create_stream_by_id(conversation_id)
+        logger.info(f"准备进入深度聊天 -> {conversation_id}")
         if not chat_stream:
             return ToolResult(success=False, summary=f"找不到会话 {conversation_id}，无法进入深度聊天。", error_message=f"Conversation {conversation_id} not found.")
 
@@ -73,10 +77,10 @@ class EnterDeepChatTool(BaseTool):
         # 整个主循环将在这里“暂停”，直到 deep_chat_sub_agent 完成它的所有内部循环并返回结果
         available_tools = self.cortex_manager.get_tool_schemas(scopes=["deep_chat"])
         available_tools_str = json.dumps(available_tools, ensure_ascii=False, indent=2)
-        final_result = await self.deep_chat_sub_agent.run(
-            initial_intent=reason,
+        final_result = await self.deep_chat_agent.run(
+            intent=reason,
             chat_stream=chat_stream,
-            available_tools_str = available_tools_str
+            available_tools = available_tools_str
         )
 
         # 3. 将子智能体的最终总结作为此工具的结果返回
