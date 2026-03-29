@@ -108,13 +108,7 @@ class CortexManager:
                 cortex_module = importlib.import_module(module_path)
                 cortex_class: Type[BaseCortex] = getattr(cortex_module, class_name)
 
-                capability_data = manifest.get("capability", {})
-                capability_name = capability_data.get("name", cortex_name)
-                self._collected_capability_descriptions.append(capability_name + ":")
-                self._collected_capability_descriptions.extend(
-                    capability_data.get("capability_description", [])
-                )
-                self._collected_capability_descriptions.append("\n")
+
 
                 if not (
                     inspect.isclass(cortex_class)
@@ -126,6 +120,19 @@ class CortexManager:
 
                 cortex_instance = cortex_class()
                 self._cortices[cortex_name] = cortex_instance
+                
+                capability_data = manifest.get("capability", {})
+                capability_name = capability_data.get("name", cortex_name)
+                self._collected_capability_descriptions.append(capability_name + ":")
+                self._collected_capability_descriptions.extend(
+                    capability_data.get("capability_description", [])
+                )
+                # --- 关键修改：存储方法引用而不是字符串 ---
+                # 注意：这里存的是函数名，没有加 ()，所以它不会立即执行
+                if hasattr(cortex_instance, "get_cortex_summary"):
+                    self._collected_capability_descriptions.append(cortex_instance.get_cortex_summary)
+                
+                self._collected_capability_descriptions.append("\n")
                 logger.info(f"发现并实例化 Cortex: '{cortex_name}'")
 
                 await cortex_instance.setup(world_model, validated_config, self)
@@ -197,8 +204,28 @@ class CortexManager:
             return None
         return registered.descriptor
 
-    def get_collected_capability_descriptions(self) -> List[str]:
-        return self._collected_capability_descriptions
+
+    async def update_cortices_summaries(self) -> str:
+        """
+        实时展开并获取所有能力描述和动态摘要。
+        """
+        final_lines = []
+        for item in self._collected_capability_descriptions:
+            if callable(item):
+                try:
+                    # 如果是函数（即 get_domain_summary），异步执行它获取最新状态
+                    summary = await item() 
+                    if summary:
+                        final_lines.append(summary)
+                except Exception as e:
+                    logger.error(f"实时获取感知摘要失败: {e}")
+            else:
+                # 如果是普通字符串（静态描述），直接添加
+                final_lines.append(str(item))
+            
+        summary_str = "\n".join(final_lines)
+        world_model: WorldModel = container.resolve(WorldModel)
+        world_model.cortices_summaries = summary_str
 
     @staticmethod
     def _normalize_tool_result(result: Any, tool_name: str) -> ToolResult:

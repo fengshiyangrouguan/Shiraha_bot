@@ -10,6 +10,7 @@ from src.common.event_model.info_data import ConversationInfo
 
 from src.common.di.container import container
 from src.common.database.database_manager import DatabaseManager
+from src.agent.world_model import WorldModel
 from src.common.database.database_model import UserInfoDB, ConversationInfoDB, EventDB
 
 # 定义滑动窗口大小常量
@@ -28,6 +29,7 @@ class QQChatMessage(BaseModel):
     user_id: Optional[str] = None
     content: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    tags: List[str] = Field(default_factory=list)
     is_replyed:bool = False
 
 class QQChatStream(BaseModel):
@@ -36,6 +38,7 @@ class QQChatStream(BaseModel):
     这个对象将被保存在 WorldModel 中，作为 Cortex 内部处理的主要数据单元。
     """
     database_manager:DatabaseManager = container.resolve(DatabaseManager)
+    world_model:WorldModel = container.resolve(WorldModel)
     stream_id: str = Field(..., description="唯一的流 ID，直接使用conversation_id")
     bot_id: Optional[str] = None
     conversation_info:ConversationInfo
@@ -58,8 +61,22 @@ class QQChatStream(BaseModel):
     unread_count: int = 0
     last_event_timestamp: Optional[int] = None # 最近一个事件的时间戳 (int)
 
-    class Config:
-        arbitrary_types_allowed = True
+    @property
+    def unreplied_ats(self) -> List[QQChatMessage]:
+        """获取所有未回复且明确 @ 了 Bot 的消息列表 (硬中断)"""
+        return [
+            msg for msg in self.llm_context 
+            if not msg.is_replyed and ("at_me" in msg.tags)
+        ]
+
+    @property
+    def unreplied_mentions(self) -> List[QQChatMessage]:
+        """获取所有未回复且提及了名字（但没 @）的消息列表 (软感知)"""
+        return [
+            msg for msg in self.llm_context 
+            if not msg.is_replyed and "mentioned_me" in msg.tags
+        ]
+        
 
     async def add_event(self, event: Event):
         """
@@ -136,7 +153,8 @@ class QQChatStream(BaseModel):
                 user_cardname=event.user_info.user_cardname if event.user_info else None,
                 user_id=event.user_info.user_id if event.user_info else None,
                 content=event.event_data.LLM_plain_text,
-                timestamp=event.time
+                timestamp=event.time,
+                tags=list(event.tags) if event.tags else []
             )
             self.llm_context.append(chat_message)
             
@@ -266,8 +284,7 @@ class QQChatStream(BaseModel):
             # 对于非机器人消息，保留昵称和消息 ID 方便模型引用
             sender_name = "你自己" if is_bot else (msg.user_nickname or "未知用户")
             msg_id = msg.message_id or "未知ID"
-            
-            # 即使是 OpenAI 格式，在多人聊天中把 [昵称(ID)] 塞进 content 依然是主流做法
+        
             content = f"[{sender_name} (ID:{msg_id})]: {msg.content or '[空消息]'}"
             
             messages.append({

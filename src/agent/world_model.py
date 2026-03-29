@@ -30,6 +30,7 @@ class WorldModel:
         mood_config = bot_config.mood
         
         self.bot_name: str = persona_config.bot_name
+        self.bot_nickname: List[str] = persona_config.bot_nickname
         self.bot_identity: str = persona_config.bot_identity
         self.bot_personality: str = persona_config.bot_personality
         self.bot_interest: str = ", ".join(persona_config.bot_interest)
@@ -39,6 +40,7 @@ class WorldModel:
         self.motive: str = ""
         self.mood: str = mood_config.initial_mood
         self.energy: int = mood_config.initial_energy
+        self.cortices_summaries: str = "" # 存储各个 Cortex 的实时状态摘要
 
         # --- 3. 初始化动态外部感知 ---
         # 使用列表来存储刺激物，方便管理

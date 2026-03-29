@@ -86,7 +86,7 @@ class ReadingCortex(BaseCortex):
         
         try:
             # 1. 内化的切片逻辑
-            slice_and_tag_book(
+            total_chunks =slice_and_tag_book(
                 input_path=raw_path,
                 output_path=registered_file_path,
                 max_chunk_size=1000
@@ -100,7 +100,8 @@ class ReadingCortex(BaseCortex):
                 status="新书未读",
                 last_read_position=0,
                 last_read_time=None,
-                is_finished_reading=False
+                is_finished_reading=False,
+                total_chunks=total_chunks
             )
 
             logger.info(f"书籍 '{book_title}' 已成功切片并注册。")
@@ -110,12 +111,58 @@ class ReadingCortex(BaseCortex):
                 registered_file_path=registered_file_path,
                 status="新书未读",
                 last_read_time=None,
-                is_finished_reading=False
+                is_finished_reading=False,
+                total_chunks=total_chunks
             )
             self.reading_data.update_library(new_book)
             await self._world_model.save_cortex_data("reading_data", self.reading_data)
         except Exception as e:
             logger.info(f"处理书籍 '{book_title}' 时发生错误: {e}")
+    
+
+    async def get_cortex_summary(self) -> str:
+        """
+        获取书房皮层的实时感知摘要，直接展示书架书籍列表和阅读进度。
+        """
+        reading_data: ReadingData = await self._world_model.get_cortex_data("reading_data")
+        
+        # 1. 基础校验
+        if not reading_data or not reading_data.book_dict:
+            return "书架是空的欸，没有找到任何书。"
+
+        summary_lines = ["书房状态概览"]
+
+        #TODO 检查是否有新上架通知（来自扫描任务）
+
+        # 3. 遍历书架详细信息 (同步 EnterLibraryTool 的逻辑)
+        summary_lines.append("--- 书架列表 ---")
+        for book in reading_data.book_dict.values():
+            # 进度计算逻辑优化：防止除以 0，确保 total_chunks 已被初始化
+            total = book.total_chunks if hasattr(book, 'total_chunks') else 0
+            current = book.current_chunk_index if hasattr(book, 'current_chunk_index') else 0
+            
+            progress = (current / total * 100) if total > 0 else 0.0
+            
+            status_tag = book.status
+            if getattr(book, 'is_finished_reading', False):
+                status_tag = "已读完"
+
+            book_info = f"- 《{book.book_title}》 [{status_tag}] | 进度: {progress:.1f}%"
+            
+            # 只有读过的书才显示时间
+            if status_tag != "新书未读" and getattr(book, 'last_read_time', None):
+                from datetime import datetime
+                dt = datetime.fromtimestamp(book.last_read_time)
+                book_info += f" | 上次阅读: {dt.strftime('%Y-%m-%d %H:%M')}"
+            
+            summary_lines.append(book_info)
+
+        # 4. 当前正打开的书籍
+        if reading_data.current_reading_book:
+            summary_lines.append(f"\n当前案头正翻开的书: 《{reading_data.current_reading_book.book_title}》")
+
+        return "\n".join(summary_lines)
+        
 
     async def teardown(self):
         logger.info("ReadingCortex: 正在关闭...")

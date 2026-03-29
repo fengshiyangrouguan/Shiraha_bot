@@ -100,6 +100,7 @@ class NapcatEventDispatcher:
         conversation_info:ConversationInfo = self._parse_conversation_info(raw_event)
         segments: List[MessageSegment] = []
         metadata: Dict[str, Any] = {}
+
         for seg in raw_event.get("message", []):
 
             seg_type = seg.get("type")
@@ -149,6 +150,7 @@ class NapcatEventDispatcher:
                     response = await self.adapter.command_api.get_user_info(data["qq"])
                     at_nickname = response["data"].get("nickname")
 
+                    ## 防止重复插入同一个用户
                     if data["qq"] not in metadata["at_user"]:
                         metadata["at_user"].append(str(data["qq"]))
                         data = at_nickname

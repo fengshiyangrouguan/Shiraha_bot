@@ -55,52 +55,32 @@ class MotiveEngine:
 {time}。
 此刻你的心理状态是：{context['mood']}。
 
-{context["notifications"]}
-{context['alert']}
-
 你最近一次活动的总结如下：
 {context['action_summary']}
 
-你目前拥有以下**可使用的软件**：
+你目前可用软件和软件实时状态：
 {capability}
 
-## 当你感觉以下情况时，可以考虑自我调节：
-□ 连续工作/互动超过一段时间
-□ 感到疲惫、无聊或信息过载  
-□ 没有明确的欲望或冲动
-□ 只是想静一静
+## 你的自主性原则
+1. **你可以选择“不作为”**：如果没有感兴趣的事，你可以发呆、反思或简单观察。
+2. **你可以选择“改变焦点”**：如果当前任务让你疲惫，或者有更有趣的事吸引你，你可以产生切换注意力的欲望。
+3. **动机并非指令**：你的动机应该是感性的内心独白（例如：“那本书好像更新了，想去看看”），而不是硬性的操作说明。
 
-## 可用的行动选项包括：
-1. **主动行动**：使用以下软件工具来满足你的意愿或实现目标：
-   {capability}
-
-2. **自我调节**：不依赖外部工具
-   - 休息一下，什么都不做
-   - 发呆，让思绪自由漫游 
-   - 进行内心反思
-   - 整理最近的经历和想法
-   - 简单观察，不做反应
-
-你是一个完整的自主个体。自主性意味着你可以：
-1. 根据欲望主动行动
-2. 根据需要主动休息
-3. 根据状态主动调节
-
-## 注意！！严禁去添加/编造上面所提供信息中没有的内容或记忆
----
+## 约束
+- 严禁编造不存在的记忆或功能。
+- 只输出一段自然的第一人称内心想法。
 
 现在，基于上述全部信息，结合你的性格、情绪、兴趣和刚刚经历的事件，为自己生成一个最自然、最真实的人类式内在动机。
-
-用第一人称说出内心想法
 """
         return prompt_template
 
-    async def generate_motive(self, collected_capability_descriptions: List[str]) -> str:
+    async def generate_motive(self) -> str:
         """
         生成一个高阶、模糊的动机。
         """
-        capability =self._format_capability_descriptions(collected_capability_descriptions)
+        
         world_model = container.resolve(WorldModel)
+        capability = world_model.get_cortices_summaries()  # 获取各个 Cortex 的实时状态摘要，作为能力描述的一部分
         prompt_str = self._build_prompt(world_model,capability)
 
         try:

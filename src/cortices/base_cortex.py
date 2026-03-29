@@ -46,6 +46,16 @@ class BaseCortex(ABC):
         这个方法在系统关闭或热卸载该 Cortex 时被调用。
         """
         pass
+    
+
+    @abstractmethod
+    async def get_cortex_summary(self) -> str:
+        """
+        返回该皮层的现状摘要。
+        例如 QQ 会话：“有 3 个活跃会话，其中 A 群有人提问，B 私聊有待办。”
+        """
+        pass
+
 
     def get_tools(self) -> List['BaseTool']:
         """

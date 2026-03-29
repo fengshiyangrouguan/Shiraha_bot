@@ -2,7 +2,7 @@
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from .chat_stream import QQChatStream
+from .chat_stream import QQChatStream, QQChatMessage
 from src.common.event_model.info_data import ConversationInfo
 from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import ConversationInfoDB
@@ -57,50 +57,59 @@ class QQChatData(BaseModel):
         return sum(stream.unread_count for stream in self.streams.values())
     
 
-    def get_unread_streams(self) -> List[QQChatStream]:
+    async def get_global_perception_report(self) -> str:
         """
-        获取所有包含未读消息的聊天流列表。
-        供 MainPlanner 使用以制定具体行动计划。
+        生成结构化的 QQ 消息列表概览。
+        仅在有特定社交触发时显式标注 [有人@你] 或 [有人提及你]。
         """
-        return [
-            stream for stream in self.streams.values() if stream.unread_count > 0
-        ]
-
-    def get_all_streams_history_for_llm(self) -> str:
-        """
-        获取所有聊天流的格式化历史记录。
-        格式要求：每个Stream的历史记录前应有对话名称和ID的标题。
+        db_manager = container.resolve(DatabaseManager)
+        from sqlmodel import select, desc
+        from src.common.database.database_model import ConversationInfoDB
         
-        Returns:
-            包含所有格式化历史记录的单一字符串。
-        """
-        all_history_parts = []
+        # 建议增加排序，让最近活跃的排在前面，方便 Planner 聚焦
+        all_convs: List[ConversationInfoDB] = await db_manager.get_all(select(ConversationInfoDB))
         
-        # 遍历存储的所有聊天流
-        for stream_id, stream in self.streams.items():
-            
-            # 1. 提取元数据
-            name = stream.conversation_info.conversation_name
-            type = stream.conversation_info.conversation_type
-            if type == "group":
-                type_descripe = "群聊"
-            else:
-                type_descripe = "私聊"
-            # 2. 构建 Stream 标题/分隔符
-            header = (
-                f"### {type_descripe}: {name}\n"
-                f"conversation_id: {stream_id}\n"
-                f"--- 聊天记录开始 ---\n"
-            )
-            
-            # 3. 获取 Stream 内部的聊天历史
-            # 调用 QQChatStream 中已有的方法来格式化消息列表
-            chat_history = stream.build_chat_history_for_llm(separator="\n---\n")
-            
-            # 4. 组合并添加到列表中
-            # 使用两个换行符 \n\n 来确保不同 Stream 之间有清晰的视觉分隔
-            full_entry = f"{header}{chat_history}\n--- 聊天记录结束 ---\n\n"
-            all_history_parts.append(full_entry)
+        if not all_convs:
+            return "QQ 会话列表\n(暂无通讯记录)"
 
-        # 将所有 Stream 的历史记录连接成一个大字符串
-        return "".join(all_history_parts).strip()
+        report = [" QQ 会话列表概览"]
+
+        for conv in all_convs:
+            s_id = str(conv.conversation_id)
+            stream = self.streams.get(s_id)
+            
+            unread_count = stream.unread_count if stream else 0
+            type_str = "群聊" if conv.conversation_type == "group" else "私聊"
+            
+            # 社交标签构建
+            social_tags = ""
+            detail_lines = []
+            
+            if stream:
+                # 处理 @ 消息
+                ats = stream.unreplied_ats
+                m:QQChatMessage = None
+                if ats:
+                    social_tags += "[有人@你]"
+                    for m in ats:
+                        detail_lines.append(f"  [@]{m.user_nickname}:{m.content or '[消息内容为空]'}")
+                
+                # 处理 提及 消息
+                mentions = stream.unreplied_mentions
+                if mentions:
+                    social_tags += " [有人提及你]"
+                    for m in mentions:
+                        detail_lines.append(f"  [提及]{m.user_nickname}:{m.content or '[消息内容为空]'}")
+
+            # 组装单行信息
+            unread_info = f"({unread_count}条未读消息)" if unread_count > 0 else "(所有消息均已读)"
+            
+            # 格式：- [群聊] 开发测试群 (ID: 12345) (3条未读) [有人@你]
+            line = f"- [{type_str}] {conv.conversation_name} (ID: {s_id}) {unread_info}{social_tags}"
+            report.append(line)
+            
+            # 注入详细内容预览
+            if detail_lines:
+                report.extend(detail_lines)
+
+        return "\n".join(report)

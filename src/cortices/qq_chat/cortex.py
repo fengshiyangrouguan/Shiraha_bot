@@ -8,6 +8,7 @@ from src.cortices.base_cortex import BaseCortex
 from src.cortices.tools_base import BaseTool
 from src.common.event_model.event import Event
 from .config.config_schema import CortexConfigSchema
+from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from .chat.event_processor import QQChatEventProcessor
 from src.cortices.manager import CortexManager
 from .chat.sticker_system.sticker_manager import StickerManager
@@ -88,6 +89,13 @@ class QQChatCortex(BaseCortex):
     async def post_event_to_processor(self, event: Event):
         """将一个事件（通常是出站事件）发送到事件处理器队列中进行持久化和状态更新。"""
         await self.event_processor.post_event_to_queue(event)
+
+    async def get_cortex_summary(self):
+        qq_chat_data:QQChatData = await self._world_model.get_cortex_data("qq_chat_data")
+        if qq_chat_data is None:
+            return "QQ 尚未初始化。"
+        summary = await qq_chat_data.get_global_perception_report()
+        return summary
 
     async def teardown(self):
         """

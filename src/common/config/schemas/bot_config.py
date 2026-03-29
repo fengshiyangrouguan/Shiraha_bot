@@ -10,6 +10,7 @@ class SystemConfig(BaseModel):
 # [persona]
 class PersonaConfig(BaseModel):
     bot_name: str = "藤原白羽"
+    bot_nickname: List[str] = []
     bot_identity: str
     bot_personality: str
     bot_interest: List[str] = Field(default_factory=list)

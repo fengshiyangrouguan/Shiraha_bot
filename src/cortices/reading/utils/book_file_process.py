@@ -46,6 +46,7 @@ def slice_and_tag_book(input_path: str, output_path: str, max_chunk_size: int):
                 f.write(tag_format.format(num=i + 1))
     
     print(f"切分完成: {output_path}, 共 {len(processed_chunks)} 个片段。")
+    return len(processed_chunks)
 
 async def load_all_books(db_manager: DatabaseManager) -> list[BookDB]:
     """从数据库中加载所有已注册书籍的完整信息。"""
@@ -73,7 +74,7 @@ async def load_all_books(db_manager: DatabaseManager) -> list[BookDB]:
         materialized_books.append(book_obj)
     return list(materialized_books)
 
-async def save_book_to_db(db_manager: DatabaseManager, book_title: str, format: str, registered_file_path: str,status: str = "未读", last_read_position: int = 0, last_read_time: float = None, is_finished_reading: bool = False):
+async def save_book_to_db(db_manager: DatabaseManager, book_title: str, format: str, registered_file_path: str,status: str = "未读", last_read_position: int = 0, last_read_time: float = None, is_finished_reading: bool = False,total_chunks: Optional[int] = None):
     """将新书信息保存到数据库中。"""
     new_book_db = BookDB(
         book_title=book_title,
@@ -82,6 +83,7 @@ async def save_book_to_db(db_manager: DatabaseManager, book_title: str, format: 
         status=status,
         last_read_position=last_read_position,
         last_read_time=last_read_time,
+        total_chunks=total_chunks,
         is_finished_reading=is_finished_reading)
 
     async with await db_manager.get_session() as session:

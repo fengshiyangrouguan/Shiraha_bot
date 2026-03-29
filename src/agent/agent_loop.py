@@ -292,16 +292,7 @@ class AgentLoop:
         )
 
     async def _execute_motive_plan(self, motive: str):
-        plan_context = await self._emit_stage("before_plan", {"motive": motive})
-        motive = plan_context.get("motive", motive)
-
         plan_result: PlanResult = await self.main_planner.plan(motive)
-        after_plan_context = await self._emit_stage(
-            "after_plan",
-            {"motive": motive, "plan_result": plan_result},
-        )
-        plan_result = after_plan_context.get("plan_result", plan_result)
-
         if not plan_result:
             logger.warning("Planner 没有产出计划结果。")
             return
@@ -404,7 +395,7 @@ class AgentLoop:
 
 ## 输出要求
 1. 总结这轮行动链的结果与影响。
-2. 用一句到两句自然中文表达。
+2. 用自然中文表达。
 3. 聚焦对后续决策仍有帮助的信息，不要写成流水账。
 """
         final_memory, _ = await llm_request.execute(prompt)
@@ -432,23 +423,9 @@ class AgentLoop:
 
     async def _run_once(self):
         try:
-            before_motive_context = await self._emit_stage(
-                "before_motive",
-                {
-                    "capability_descriptions": self.cortex_manager.get_collected_capability_descriptions(),
-                },
-            )
-            capability_descriptions = before_motive_context.get(
-                "capability_descriptions",
-                self.cortex_manager.get_collected_capability_descriptions(),
-            )
-            motive = await self.motive_engine.generate_motive(capability_descriptions)
 
-            after_motive_context = await self._emit_stage(
-                "after_motive",
-                {"capability_descriptions": capability_descriptions, "motive": motive},
-            )
-            motive = after_motive_context.get("motive", motive)
+            self.cortex_manager.update_cortices_summaries()
+            motive = await self.motive_engine.generate_motive()
 
             if not motive:
                 logger.info("当前没有生成新的动机。")
