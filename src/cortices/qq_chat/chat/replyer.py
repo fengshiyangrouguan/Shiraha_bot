@@ -44,8 +44,8 @@ class QQReplyer:
         self,
         conversation_info: ConversationInfo,
         reason: str,
-        history: str,
-    ) -> str:
+        history: list,
+    ) -> list:
         name = self._world_model.bot_name
         personality = self._world_model.bot_personality
         interest = self._world_model.bot_interest
@@ -74,7 +74,7 @@ class QQReplyer:
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
 
-        prompt =f"""
+        system_prompt =f"""
 ## 你的身份设定与当前状态:
 - **你的名字**： {name}
 - **你的性格**： {personality}
@@ -87,13 +87,8 @@ class QQReplyer:
 {time}
 {chat_target}
 
-## **以下是最近聊天记录**,请仔细阅读：
-{history}
-
-## **注意！“你自己”指的就是你自己发过的消息，请不要回应你自己的消息**
 ## **禁止回复 "—— 以上为已回复历史消息，禁止回复 ——" 上方的任何消息！！！**
 
-你现在想要回复消息，{reason}
 - 你的说话风格：{expression_style}
 ### 你可以学习以下的说话表达风格，在合适的场景可直接套用句式：
 {expression_reference}
@@ -103,8 +98,6 @@ class QQReplyer:
 - 尽量使用短句
 - 最终结尾处禁止使用句号
 - 不要对表情包进行回复
-
-
 
 ## 输出格式
 你可以按情况随意选择以下一个或多个action:
@@ -135,9 +128,12 @@ class QQReplyer:
 
 请基于这些内容生成JSON输出。
 """
+        
+        messages = [{"role": "system", "content": system_prompt},]
+        messages.extend(history)
+        messages.append({"role": "user", "content": f"你现在想要回复消息，{reason}。请给出你的决策。"})
         logger.info(f"[QQReplyer] prompt built for conversation_id={conversation_info.conversation_id}")
-        return prompt
-
+        return messages
     async def _post_self_message_event(
         self,
         conversation_id: str,
@@ -173,14 +169,10 @@ class QQReplyer:
         try:
             conversation_info = chat_stream.conversation_info
             conversation_id = conversation_info.conversation_id
-            recent_messages = chat_stream.build_chat_history_has_msg_id()
-
-            logger.info(f"[QQReplyer] execute start, conversation={conversation_info.conversation_name}, reason={reason}")
-            logger.info(f"[QQReplyer] recent_messages:\n{recent_messages}")
-
-            prompt = await self._build_reply_prompt(conversation_info, reason, recent_messages)
+            recent_messages: list = chat_stream.build_openai_chat_history()
+            prompt:list = await self._build_reply_prompt(conversation_info, reason, recent_messages)
             llm_request = self.llm_request_factory.get_request("replyer")
-            content, _ = await llm_request.execute(prompt=prompt)
+            content, _ = await llm_request.execute_messages(messages=prompt)
             logger.info(f"[QQReplyer] raw reply llm output: {content}")
 
             actions = self._parse_actions(content)

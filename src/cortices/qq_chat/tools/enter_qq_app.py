@@ -42,7 +42,7 @@ class EnterQQAppTool(BaseTool):
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_qq_app",
-            "description": "打开/回到QQ的主页面，查看全局会话列表和未读消息并规划后续行动。",
+            "description": "打开QQ的主页面，查看群聊和私聊列表，以及未读消息",
             "parameters": {
                 "type": "object",
                 "properties": {

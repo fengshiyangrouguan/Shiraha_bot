@@ -238,9 +238,57 @@ class QQChatStream(BaseModel):
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)
     
+    def build_openai_chat_history(self) -> List[Dict[str, str]]:
+        """
+        将 llm_context 转换为 OpenAI 标准消息格式，并处理已回复状态。
+        """
+        messages = []
+        divider_inserted = False
+        
+        if not self.llm_context:
+            return [{"role": "system", "content": "无最近聊天记录"}]
+
+        for msg in self.llm_context:
+            # 1. 处理分割线 (逻辑维持原样，但作为 system 消息插入)
+            if not msg.is_replyed and not divider_inserted:
+                if messages:
+                    messages.append({
+                        "role": "system", 
+                        "content": "—— 以上为已回复历史消息，禁止重复回复 ——"
+                    })
+                divider_inserted = True
+
+            # 2. 确定角色 (Role)
+            is_bot = self.bot_id is not None and str(msg.user_id) == str(self.bot_id)
+            role = "assistant" if is_bot else "user"
+
+            # 3. 构造内容 (Content)
+            # 对于非机器人消息，保留昵称和消息 ID 方便模型引用
+            sender_name = "你自己" if is_bot else (msg.user_nickname or "未知用户")
+            msg_id = msg.message_id or "未知ID"
+            
+            # 即使是 OpenAI 格式，在多人聊天中把 [昵称(ID)] 塞进 content 依然是主流做法
+            content = f"[{sender_name} (ID:{msg_id})]: {msg.content or '[空消息]'}"
+            
+            messages.append({
+                "role": role,
+                "content": content
+            })
+
+        # 4. 如果全都是已读，末尾补一个提示
+        if not divider_inserted and messages:
+            messages.append({
+                "role": "system", 
+                "content": "—— 以上为已回复的历史消息，禁止重复回复 ——"
+            })
+
+        return messages
+    
     def mark_as_replyed(self):
         for i, msg in enumerate(self.llm_context):
             msg.is_replyed = True
+            self._msg_count = 0
+            self._new_message_event.clear() 
 
     def get_new_message_event(self) -> asyncio.Event:
         return self._new_message_event

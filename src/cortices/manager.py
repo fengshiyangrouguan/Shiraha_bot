@@ -67,7 +67,7 @@ class CortexManager:
         )
 
         async def _executor(**kwargs):
-            return await tool.call_tool(**kwargs)
+            return await tool.execute(**kwargs)
 
         self._get_tool_registry().register_tool(descriptor=descriptor, executor=_executor)
         logger.info(f"原生工具 '{tool_name}' 已注册到统一工具表，作用域为 {tool.scope}。")

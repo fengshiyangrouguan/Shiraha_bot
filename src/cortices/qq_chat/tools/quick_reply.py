@@ -94,6 +94,7 @@ class QuickReplyTool(BaseTool):
     def _build_follow_up_prompt(
         self,
         conversation_name: str,
+        conversation_id: str,
         reason: str,
         reply_summary: str,
         latest_history: str,
@@ -106,6 +107,7 @@ class QuickReplyTool(BaseTool):
 你是一个轻量 QQ 会话处理器。你刚刚完成了一次 quick reply，现在需要判断下一步该怎么做。
 
 会话名称: {conversation_name}
+会话ID：{conversation_id}
 本轮回复目标: {reason}
 当前轮次: {turn_index}/{max_turns}
 
@@ -274,6 +276,7 @@ class QuickReplyTool(BaseTool):
             reason=reason,
             chat_stream=chat_stream,
         )
+        chat_stream.mark_as_replyed()
         result_summary = f"在会话“{conversation_name}”中完成了一次快速回复。{reply_summary}".strip()
 
         if turn_index >= max_turns:
@@ -284,6 +287,7 @@ class QuickReplyTool(BaseTool):
         tool_schema_map = self._build_tool_schema_map(tool_schemas)
         follow_up_prompt = self._build_follow_up_prompt(
             conversation_name=conversation_name,
+            conversation_id=chat_stream.conversation_info.conversation_id,
             reason=reason,
             reply_summary=reply_summary,
             latest_history=latest_history,
@@ -313,6 +317,7 @@ class QuickReplyTool(BaseTool):
         except Exception as exc:
             logger.warning(f"quick_reply 后效决策失败，默认退出: {exc}")
 
+        chat_stream.mark_as_read
         follow_up_actions = self._build_follow_up_actions(
             conversation_id=conversation_id,
             decision=decision,

@@ -82,6 +82,6 @@ class EnterDeepChatTool(BaseTool):
             chat_stream=chat_stream,
             available_tools = available_tools_str
         )
-
+        chat_stream.mark_as_read()  # 标记为已读，结束后续的未读提醒
         # 3. 将子智能体的最终总结作为此工具的结果返回
         return final_result
