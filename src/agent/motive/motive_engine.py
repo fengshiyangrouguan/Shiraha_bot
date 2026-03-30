@@ -82,6 +82,7 @@ class MotiveEngine:
         world_model = container.resolve(WorldModel)
         capability = world_model.get_cortices_summaries()  # 获取各个 Cortex 的实时状态摘要，作为能力描述的一部分
         prompt_str = self._build_prompt(world_model,capability)
+        print(f"生成动机的提示:\n{prompt_str}")
 
         try:
             response:str

@@ -7,7 +7,7 @@ from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import BookDB
 from src.cortices.reading.reading_data import Book
 
-def slice_and_tag_book(input_path: str, output_path: str, max_chunk_size: int):
+def slice_and_tag_book(input_path: str, output_path: str, max_chunk_size: int) -> int :
     """
     内化到 Cortex 中的书籍切片与标记功能。
     逻辑源自之前的 slice_and_tag_by_newline.py 脚本。
@@ -69,6 +69,7 @@ async def load_all_books(db_manager: DatabaseManager) -> list[BookDB]:
             status=db_item.status,
             last_read_time=db_item.last_read_time,
             is_finished_reading=db_item.is_finished_reading,
+            total_chunks=db_item.total_chunks,
             current_chunk_index=db_item.last_read_position or 0
         )
         materialized_books.append(book_obj)

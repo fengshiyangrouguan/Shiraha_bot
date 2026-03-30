@@ -8,6 +8,7 @@ from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
 from src.common.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.logger import get_logger
+from src.agent.task import TaskPriority, TaskRecord, TaskStatus, TaskStore
 
 logger = get_logger("world_model")
 
@@ -41,6 +42,7 @@ class WorldModel:
         self.mood: str = mood_config.initial_mood
         self.energy: int = mood_config.initial_energy
         self.cortices_summaries: str = "" # 存储各个 Cortex 的实时状态摘要
+        self.last_observation: str = ""
 
         # --- 3. 初始化动态外部感知 ---
         # 使用列表来存储刺激物，方便管理
@@ -61,6 +63,7 @@ class WorldModel:
 
         # 心流缓存，缓存一些阅读，编程，等产生的感悟，形成侧回路，避免影响其他cortex
         self.flow_cache:Deque[str] = deque(maxlen=15)
+        self.task_store: TaskStore = TaskStore()
 
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """
@@ -111,6 +114,12 @@ class WorldModel:
         self.notifications[type]=notification
         logger.info(f"收到新通知 - '{notification}'")
 
+    def set_last_observation(self, observation: Optional[str]) -> None:
+        self.last_observation = (observation or "").strip()
+
+    def get_last_observation(self) -> str:
+        return self.last_observation
+
     def update_internal_state(self, mood: Optional[str] = None, energy_delta: Optional[int] = None):
         """更新 Agent 的内在状态。"""
         if mood:
@@ -150,6 +159,8 @@ class WorldModel:
         
         return f"现在是{time_format} {week_str} {period}"
 
+    def get_cortices_summaries(self) -> str:
+        return self.cortices_summaries
 
     def get_context_for_motive(self) -> Dict[str, Any]:
         """
@@ -194,6 +205,9 @@ class WorldModel:
             "mood": self.mood,
             "notifications": notification_str,
             "alert": alert_str or "当前没有紧急警报。",
-            "action_summary": action_summary_str
+            "action_summary": action_summary_str,
+            "current_focus": self.get_focus_summary_text(),
+            "task_summary": self.get_task_summary_text(),
+            "last_observation": self.get_last_observation(),
         }
         return context

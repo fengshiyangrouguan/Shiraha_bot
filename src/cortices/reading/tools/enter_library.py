@@ -47,50 +47,32 @@ class EnterLibraryTool(BaseTool):
             "required": ["objective"]
         }
 
-    async def get_domain_summary(self) -> str:
-        """
-        获取书房皮层的实时感知摘要，直接展示书架书籍列表和阅读进度。
-        """
-        reading_data: ReadingData = await self._world_model.get_cortex_data("reading_data")
-        
-        # 1. 基础校验
-        if not reading_data or not reading_data.book_dict:
-            return "### 书房状态\n当前书架为空，无书籍记录。"
+    async def _get_library_context(self) -> str:
+        """获取书架现状的文本描述"""
+        reading_data: ReadingData = await self.world_model.get_cortex_data("reading_data")
+        if not reading_data or not reading_data.book_dict.values():
+            return "书架是空的欸，没有找到任何书。你该去找别人推荐点书单了"
 
-        summary_lines = ["### 书房状态概览"]
-
-        # 2. 检查是否有新上架通知（来自扫描任务）
-        if "书房" in self._world_model.notifications:
-            summary_lines.append(f"通知: {self._world_model.notifications['书房']}")
-
-        # 3. 遍历书架详细信息 (同步 EnterLibraryTool 的逻辑)
-        summary_lines.append("--- 书架列表 ---")
+        lines = ["[书架状态概要]"]
+        book:Book = None
         for book in reading_data.book_dict.values():
-            # 进度计算逻辑优化：防止除以 0，确保 total_chunks 已被初始化
-            total = book.total_chunks if hasattr(book, 'total_chunks') else 0
-            current = book.current_chunk_index if hasattr(book, 'current_chunk_index') else 0
-            
-            progress = (current / total * 100) if total > 0 else 0.0
-            
+            progress = (book.current_chunk_index / book.total_chunks * 100) if book.total_chunks > 0 else 0
             status_tag = book.status
-            if getattr(book, 'is_finished_reading', False):
+            if book.is_finished_reading:
                 status_tag = "已读完"
 
-            book_info = f"- 《{book.book_title}》 [{status_tag}] | 进度: {progress:.1f}%"
-            
-            # 只有读过的书才显示时间
-            if status_tag != "新书未读" and getattr(book, 'last_read_time', None):
-                from datetime import datetime
-                dt = datetime.fromtimestamp(book.last_read_time)
-                book_info += f" | 上次阅读: {dt.strftime('%Y-%m-%d %H:%M')}"
-            
-            summary_lines.append(book_info)
-
-        # 4. 当前正打开的书籍
+            book_str = f"- {book.book_title} [{status_tag} ] | 进度: {progress:.1f}%"   
+            if book.status != "新书未读":
+                timestamp = book.last_read_time
+                dt_object = datetime.fromtimestamp(timestamp)
+                time = dt_object.strftime("%Y-%m-%d %H:%M")
+                book_str = book_str + f"，上次阅读时间：{time}"
+            lines.append(book_str)
+        
         if reading_data.current_reading_book:
-            summary_lines.append(f"\n当前案头正翻开的书: 《{reading_data.current_reading_book.book_title}》")
-
-        return "\n".join(summary_lines)
+            lines.append(f"\n当前案头正翻开的书: 《{reading_data.current_reading_book.book_title}》")
+            
+        return "\n".join(lines)
 
     async def _run_decide_planner(self, objective: str, library_str: str) -> Dict[str, Any]:
         """内置轻量决策器"""

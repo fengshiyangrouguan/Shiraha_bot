@@ -77,7 +77,9 @@ class QQChatStream(BaseModel):
             if not msg.is_replyed and "mentioned_me" in msg.tags
         ]
         
-
+    class Config:
+        arbitrary_types_allowed = True
+        
     async def add_event(self, event: Event):
         """
         向聊天流中添加一个新事件，并更新相关状态。
