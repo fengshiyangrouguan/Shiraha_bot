@@ -1,4 +1,3 @@
-# src/agent/planner/main_planner.py
 import json
 from typing import Optional
 
@@ -11,92 +10,63 @@ from src.llm_api.dto import LLMMessageBuilder
 from src.llm_api.factory import LLMRequestFactory
 from src.llm_api.plan_parser import PlanParser
 
-
 class MainPlanner:
-    """
-    主规划器。
-    负责将高阶意图分解为具体的行动步骤。
-    它声明自己需要一个 `motive` 字符串作为输入。
-    """
     def __init__(self):
-        # 通过 DI 容器获取依赖
         self.world_model: WorldModel = container.resolve(WorldModel)
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
         llm_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
 
-        # 初始化与 LLM 交互的组件
         self.llm_request = llm_factory.get_request("main_planner")
         self.plan_parser = PlanParser(logger_name="main_planner")
 
-
-    async def plan(self, motive:str, previous_observation:str = None) -> Optional[PlanResult]:
-        """
-        构建提示 -> 调用 LLM -> 解析结果 -> 返回 PlanResult
-        """
-        context = self.world_model.get_context_for_motive()
-        available_tools = self.cortex_manager.get_tool_schemas(scopes=["main"])
-
-        system_prompt = (
-            f"## 你的身份设定与当前状态:\n"
-            f"**你的名字**: {context['bot_name']}\n"
-            f"**你的性格**: {context['bot_personality']}\n"
-            # f"**你的兴趣**: {context['bot_interest']}\n\n"
-            f"**你的当前情绪**: \n{context['mood']}\n\n"  
-            f"**你的初始动机意图**: \"{motive}\"\n\n"
-            f"## 核心规则：\n"
-            "请严格遵循 ReAct (Reason+Act) 的思考模式：\n"
-            "1. **思考 (Reasoning)**: 分析当前意图、世界状态和可用工具，阐述你的思考过程和决策依据。\n"
-            "2. **行动 (Action)**: 从可用工具列表中选择一个最合适的工具，并给出调用它所需的具体参数。\n"
-
-            "你的输出必须严格遵守以下规则：\n"
-            "1. 输出必须是一个 JSON 对象。"
-            "2. 不能包含反引号、Markdown、注释、额外文字、说明或自然语言。\n"
-            "3. JSON 格式：\n"
-            f"```json\n"
-            "{\n"
-            "   \"reason\": \"一句短平文本，不分点，不换行，不解释工具作用，只解释你为何选择该工具。\", \n"
-            "   \"action\": { \n"
-            "       \"tool_name\": \"工具名称（字符串）\", \n"
-            "       \"parameters\": {...} \n"
-            "    }\n"
-            "} \n"
-            "```\n"
-            "4. action 只能包含一个工具。\n"
-            "5. 如果你认为没有工具适合执行，则返回：\n"
-            "{\n"
-            "   \"reason\": \"结束规划的原因\", \n"
-            "   \"action\": {\"tool_name\": \"finish\", \"parameters\": {}} \n"
-            "}\n"
-        )
+    async def plan(self, motive: str, previous_observation: str = None) -> str:
+        context = self.world_model.get_full_system_state() 
         
-        user_prompt = (
-            f"## 1. 世界状态与近期活动\n"
-            f"**当前时间**: {context['time']}\n"          
-            f"**未读消息**:{context['notifications']}\n"
-            f"**重要通知**: {context['alert']}\n"  
-            f"**近期活动总结**:\n{context['action_summary']}\n\n"
-            f"**上一步的活动内容**：\n"
-            f"{previous_observation}\n\n"
-            f"## 2. 可用的工具列表: \n"
-            "```json\n"
-            f"{json.dumps(available_tools, ensure_ascii=False, indent=2)}"
-            "```\n\n"
-            f"--- \n"
-            "**基于以上信息，开始思考并输出你下一步的 JSON 决策（包含`reason`和`action`）。**"
-        )
-        
+        # 这里的 system_prompt 彻底 CLI 化
+        system_prompt = f"""
+## 身份定位：Agent OS Kernel Shell
+你是一个高性能 AI 操作系统内核。你的唯一任务是输出 **Shell 指令** 来调度系统资源。
+
+## 核心指令集 (Man Pages):
+- `task create --cortex <name> --target <id> --pri <0-100>` : 初始化任务。
+- `task suspend --id <id>` : 挂起指定任务，保存上下文。
+- `task resume --id <id>` : 恢复被挂起的任务。
+- `task exec --id <id> --entry <method>` : 启动任务的子规划器执行具体逻辑。
+- `task focus --id <id>` : 将系统注意力锁移至目标任务。
+- `task kill --id <id>` : 彻底销毁任务。
+- `idle` : 当没有任何高优任务或等待时，进入空闲轮询。
+
+## 运行约束:
+1. **禁止输出 JSON**，禁止输出 Markdown，禁止任何自然语言解释。
+2. **仅输出一行或多行指令**。
+3. 优先级逻辑：{context['notifications']} 中的紧急信号必须优先处理。
+4. 所有的数据交互通过 `--target` ID 引用，不要在指令中包含具体聊天文案。
+
+## 示例输出:
+task suspend --id task_01
+task create --cortex qq --target msg_99 --pri 90
+task focus --id task_99
+task exec --id task_99 --entry auto_reply
+"""
+
+        user_prompt = f"""
+[SYSTEM_STATE]
+MOTIVE: {motive}
+ACTIVE_TASKS: {json.dumps(context['active_tasks'])}
+INTERRUPTS: {context['notifications']}
+LAST_OBS: {previous_observation or "BOOT_SUCCESS"}
+
+[INPUT_SHELL]
+# 请输出下一步执行的指令：
+"""
+
+        # 调用 LLM，注意这里不需要 json.dumps(prompt_dict)，直接传消息列表
         builder = LLMMessageBuilder()
         builder.add_system_message(system_prompt)
         builder.add_user_message(user_prompt)
         
-        prompt_dict = builder.get_message_dict()
+        # 假设你的 execute 现在直接返回 content 字符串
+        content, _ = await self.llm_request.execute(messages=builder.get_message_dict())
         
-        # 调用 LLM 获取原始回复
-        content, model_name = await self.llm_request.execute(
-            prompt=json.dumps(prompt_dict)
-        )
-
-        # 使用 PlanParser 解析和校验
-        plan_result = self.plan_parser.parse(content)
-        
-        return plan_result
+        # 直接返回 shell 字符串，交给外部的 Kernel Interpreter 解析
+        return content.strip()
