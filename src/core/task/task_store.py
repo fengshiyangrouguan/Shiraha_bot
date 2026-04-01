@@ -13,7 +13,9 @@ class TaskStore:
         self._tasks: Dict[str, TaskInstance] = {}
 
     async def save(self, task: TaskInstance):
-        task.updated_at = 0.0 # 模拟时间更新逻辑
+        # 更新时间戳，后续可替换为数据库的 update_at 逻辑
+        import time
+        task.updated_at = time.time()
         self._tasks[task.task_id] = task
         return task
 
@@ -32,3 +34,11 @@ class TaskStore:
     async def delete(self, task_id: str):
         if task_id in self._tasks:
             del self._tasks[task_id]
+
+    async def update_status(self, task_id: str, status: TaskStatus):
+        task = await self.get(task_id)
+        if not task:
+            return None
+        task.status = status
+        await self.save(task)
+        return task
