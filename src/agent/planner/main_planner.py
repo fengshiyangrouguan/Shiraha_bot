@@ -20,7 +20,7 @@ class MainPlanner:
         self.plan_parser = PlanParser(logger_name="main_planner")
 
     async def plan(self, motive: str, previous_observation: str = None) -> str:
-        context = self.world_model.get_full_system_state() 
+        context = await self.world_model.get_full_system_state()
         
         # 这里的 system_prompt 彻底 CLI 化
         system_prompt = f"""

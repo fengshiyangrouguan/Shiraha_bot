@@ -3,10 +3,8 @@ import asyncio
 from typing import List, Dict, Any
 from src.common.logger import get_logger
 from src.common.di.container import container
-
-# 导入任务管理器和调度器（假设已存在）
-# from src.core.task.manager import TaskManager
-# from src.core.kernel.scheduler import Scheduler
+from src.core.task.task_manager import TaskManager
+from src.core.kernel.scheduler import Scheduler
 
 logger = get_logger("kernel_interpreter")
 
@@ -17,10 +15,8 @@ class KernelInterpreter:
     """
 
     def __init__(self):
-        # 通过 DI 获取内核组件
-        # self.task_manager: TaskManager = container.resolve(TaskManager)
-        # self.scheduler: Scheduler = container.resolve(Scheduler)
-        pass
+        self.task_manager: TaskManager = container.resolve(TaskManager)
+        self.scheduler: Scheduler = container.resolve(Scheduler)
 
     async def execute_batch(self, shell_commands: str) -> List[Dict[str, Any]]:
         """
@@ -37,15 +33,15 @@ class KernelInterpreter:
                 if not cmd_parts:
                     continue
                 
-                res = await self.dispatch(cmd_parts)
-                results.append({"command": line, "status": "success", "output": res})
+                res = await self._dispatch(cmd_parts)
+                results.append({"command": line, "status": "success", "output": self._normalize_output(res)})
             except Exception as e:
                 logger.error(f"指令执行失败: {line} | 错误: {e}")
                 results.append({"command": line, "status": "error", "message": str(e)})
         
         return results
 
-    async def dispatch(self, args: List[str]) -> Any:
+    async def _dispatch(self, args: List[str]) -> Any:
         """
         指令路由分发 (System Call Dispatcher)
         """
@@ -66,35 +62,55 @@ class KernelInterpreter:
         sub_cmd = args[0].lower()
         params = self._parse_args(args[1:])
 
-        logger.info(f"Kernel Call: task {sub_cmd} | Params: {params}")
+        logger.info(f"任务指令: {sub_cmd} | 参数: {params}")
 
         if sub_cmd == "create":
             # 示例: task create --cortex qq --target 12345 --pri 80
-            # return await self.task_manager.create_task(
-            #     cortex=params.get('cortex'),
-            #     target=params.get('target'),
-            #     priority=int(params.get('pri', 50))
-            # )
+            if self.task_manager:
+                return await self.task_manager.create_task(
+                    cortex=params.get('cortex', ''),
+                    target_id=params.get('target', ''),
+                    priority=int(params.get('pri', 50)),
+                    motive=params.get('motive', '')
+                )
             return f"Task created in {params.get('cortex')}"
 
         elif sub_cmd == "exec":
             # 示例: task exec --id task_01 --entry run_step
-            # return await self.scheduler.dispatch_to_executor(
-            #     task_id=params.get('id'),
-            #     entry=params.get('entry')
-            # )
-            return f"Executing {params.get('id')}"
+            if self.scheduler:
+                return await self.scheduler.dispatch_to_executor(
+                    task_id=params.get('id'),
+                    entry=params.get('entry')
+                )
+            return f"注意力转向 {params.get('id')}"
 
         elif sub_cmd == "suspend":
-            # 示例: task suspend --id task_01
-            # return await self.task_manager.suspend_task(params.get('id'))
-            return f"Task {params.get('id')} suspended"
-
+            # 示例: task suspend --id task_01 
+            if self.task_manager:
+                return await self.task_manager.suspend_task(params.get('id'))
+            return f"任务 {params.get('id')} 已挂起"
+        
+        elif sub_cmd == "mute":
+            # 示例: task mute --id task_01 --pri 80
+            if self.task_manager:
+                return await self.task_manager.suspend_task(params.get('id'))
+            return f"任务 {params.get('id')} 已静默"
+        
+        elif sub_cmd == "resume":
+            # 示例: task resume --id task_01
+            if self.task_manager:
+                return await self.task_manager.resume_task(params.get('id'))
+            return f"任务 {params.get('id')} 已恢复"
+        
+        
         elif sub_cmd == "kill":
-            return f"Task {params.get('id')} terminated"
+            if self.task_manager:
+                await self.task_manager.terminate_task(params.get('id'))
+                return "terminated"
+            return f"任务 {params.get('id')} 已结束"
 
         else:
-            raise ValueError(f"Unknown task sub-command: {sub_cmd}")
+            raise ValueError(f"未知的任务指令: {sub_cmd}")
 
     def _parse_args(self, arg_list: List[str]) -> Dict[str, str]:
         """
@@ -114,3 +130,12 @@ class KernelInterpreter:
             else:
                 i += 1
         return parsed
+
+    def _normalize_output(self, res: Any) -> Any:
+        """将执行结果转换为可序列化形态。"""
+        if hasattr(res, "to_dict"):
+            try:
+                return res.to_dict()
+            except Exception:
+                return str(res)
+        return res

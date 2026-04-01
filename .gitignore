@@ -96,7 +96,7 @@ desktop.ini
 # =========================
 data/invest_data
 src/plugins/utils/policy_final.pt
-note/no_use
+note/
 data/
 logs/
 configs/

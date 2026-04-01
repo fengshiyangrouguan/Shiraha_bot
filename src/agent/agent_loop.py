@@ -16,6 +16,11 @@ from src.common.di.container import container
 from src.common.logger import get_logger
 from src.cortices.manager import CortexManager
 from src.llm_api.factory import LLMRequestFactory
+from src.core.task.task_store import TaskStore as CoreTaskStore
+from src.core.task.task_manager import TaskManager
+from src.core.kernel.scheduler import Scheduler
+from src.core.kernel.interpreter import KernelInterpreter
+from src.core.kernel.interrupt_handler import InterruptHandler
 
 logger = get_logger("agent_loop")
 
@@ -27,11 +32,31 @@ class AgentLoop:
 
     def __init__(self):
         logger.info("初始化 AgentLoop...")
+        # ---- 注册核心内核组件（供 WorldModel/Planner 共享） ----
+        self.core_task_store = CoreTaskStore()
+        try:
+            container.register_instance(CoreTaskStore, self.core_task_store)
+        except Exception:
+            # 已注册则忽略
+            pass
+
+        self.task_manager = TaskManager(self.core_task_store)
+        self.scheduler = Scheduler()
+        self.kernel_interpreter = KernelInterpreter()
+        self.interrupt_handler = InterruptHandler()
+        try:
+            container.register_instance(TaskManager, self.task_manager)
+            container.register_instance(Scheduler, self.scheduler)
+            container.register_instance(KernelInterpreter, self.kernel_interpreter)
+        except Exception:
+            pass
+
+        # ---- Agent 认知层组件 ----
+        self.world_model: WorldModel = container.resolve(WorldModel)
         self.motive_engine = MotiveEngine()
         self.main_planner = MainPlanner()
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
         self.llm_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
-        self.world_model: WorldModel = container.resolve(WorldModel)
         self.database_manager: DatabaseManager = container.resolve(DatabaseManager)
 
         self._is_running = False
@@ -291,66 +316,21 @@ class AgentLoop:
             },
         )
 
-    async def _execute_motive_plan(self, motive: str):
-        plan_result: PlanResult = await self.main_planner.plan(motive)
-        if not plan_result:
-            logger.warning("Planner 没有产出计划结果。")
+    async def _execute_shell_plan(self, motive: str, shell_commands: str):
+        """
+        将 MainPlanner 产出的 Shell 指令交给 Kernel Interpreter 执行，并记录观察。
+        这里只关注“指令 -> 执行结果”链路，真实工具/子规划器由 core 层承接。
+        """
+        if not shell_commands:
+            logger.warning("Planner 没有产出任何指令。")
             return
 
-        if plan_result.action.tool_name == "finish":
-            logger.info(f"本轮动机结束，原因：{plan_result.reason}")
-            self.world_model.add_memory(f"本轮动机已结束，原因：{plan_result.reason}")
-            await asyncio.sleep(self.heartbeat_interval * 2)
-            return
-
-        action_queue: List[ActionSpec] = [plan_result.action]
-        queue_context = await self._emit_stage(
-            "before_action_queue_start",
-            {"motive": motive, "plan_result": plan_result, "action_queue": action_queue},
-        )
-        action_queue = queue_context.get("action_queue", action_queue)
-
-        full_results_for_memory: List[ToolResult] = []
-        executed_actions_for_memory: List[ActionSpec] = []
-        chain_step = 0
-        max_chain_steps = 10
-
-        while action_queue and chain_step < max_chain_steps:
-            current_action = action_queue.pop(0)
-            chain_step += 1
-            logger.info(f"行动链 [步骤 {chain_step}]: 执行动作 '{current_action.tool_name}'")
-
-            tool_result = await self._execute_action(
-                current_action,
-                chain_step,
-                motive,
-                full_results_for_memory,
-            )
-            full_results_for_memory.append(tool_result)
-            executed_actions_for_memory.append(current_action)
-            self._record_immediate_memory(current_action, tool_result)
-
-            if tool_result.follow_up_action:
-                await self._enqueue_follow_up_actions(
-                    action_queue,
-                    tool_result.follow_up_action,
-                    motive,
-                    chain_step,
-                )
-
-        if chain_step >= max_chain_steps:
-            logger.warning("行动链达到最大步骤数，已停止继续调度。")
-
-        await self._record_chain_memory(
-            motive,
-            plan_result,
-            full_results_for_memory,
-            executed_actions_for_memory,
-        )
-        await self._emit_stage(
-            "after_action_queue_complete",
-            {"motive": motive, "plan_result": plan_result, "results": full_results_for_memory},
-        )
+        results = await self.kernel_interpreter.execute_batch(shell_commands)
+        # 将执行结果记入世界模型，供下一轮上一条 observation 使用
+        observation = json.dumps(results, ensure_ascii=False)
+        self.world_model.set_last_observation(observation)
+        self.world_model.add_memory(f"执行指令: {shell_commands.splitlines()} -> {observation}")
+        return results
 
     async def _record_chain_memory(
         self,
@@ -432,7 +412,10 @@ class AgentLoop:
                 return
 
             self.world_model.motive = motive
-            await self._execute_motive_plan(motive)
+            # 刷新任务快照供 Planner 使用
+            await self.world_model.refresh_task_snapshots()
+            shell_plan = await self.main_planner.plan(motive, self.world_model.get_last_observation())
+            await self._execute_shell_plan(motive, shell_plan)
             logger.info(f"动机 '{motive}' 已处理完成。")
         except asyncio.CancelledError:
             logger.warning("AgentLoop 任务被取消。")

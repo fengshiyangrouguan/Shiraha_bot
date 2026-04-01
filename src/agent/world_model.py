@@ -2,13 +2,15 @@
 import time
 from collections import deque
 from typing import List, Dict, Any, Deque, Optional, Type
-from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
+from pydantic import BaseModel  # 导入 BaseModel 用于类型提示和校验
 
 # 导入配置
 from src.common.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.logger import get_logger
 from src.agent.task import TaskPriority, TaskRecord, TaskStatus, TaskStore
+from src.core.task.task_store import TaskStore as CoreTaskStore
+from src.core.task.models import TaskInstance
 
 logger = get_logger("world_model")
 
@@ -41,19 +43,20 @@ class WorldModel:
         self.motive: str = ""
         self.mood: str = mood_config.initial_mood
         self.energy: int = mood_config.initial_energy
-        self.cortices_summaries: str = "" # 存储各个 Cortex 的实时状态摘要
+        self.cortices_summaries: str = ""  # 存储各个 Cortex 的实时状态摘要
         self.last_observation: str = ""
+        self.current_focus_task: Optional[str] = None
 
         # --- 3. 初始化动态外部感知 ---
         # 使用列表来存储刺激物，方便管理
-        self.notifications: Dict[str,Any] = {}
+        self.notifications: Dict[str, Any] = {}
         self.alerts: List[str] = []
 
         # --- 4. 初始化记忆 ---
         
         # 使用字典来存储不同来源的事件流/状态
         # 这是 WorldModel 的核心，用于存储各个 Cortex 维护的特定数据，纯内存操作
-        self.cortex_data: Dict[str, BaseModel] = {} 
+        self.cortex_data: Dict[str, BaseModel] = {}
 
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
         # TODO: 以后来一个随机的初始动作
@@ -62,8 +65,15 @@ class WorldModel:
         self.long_term_memory = None # 长期记忆占位符
 
         # 心流缓存，缓存一些阅读，编程，等产生的感悟，形成侧回路，避免影响其他cortex
-        self.flow_cache:Deque[str] = deque(maxlen=15)
-        self.task_store: TaskStore = TaskStore()
+        self.flow_cache: Deque[str] = deque(maxlen=15)
+        # Prompt 摘要缓存
+        self.task_snapshot_store: TaskStore = TaskStore()
+        # 内核任务仓库（生命周期控制）
+        try:
+            self.core_task_store: CoreTaskStore = container.resolve(CoreTaskStore)
+        except Exception:
+            # 容器中尚未注册时，使用内置实例
+            self.core_task_store = CoreTaskStore()
 
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """
@@ -111,7 +121,7 @@ class WorldModel:
 
 
     def update_notification(self, notification: Optional[str] = None, type: Optional[str] = None):
-        self.notifications[type]=notification
+        self.notifications[type] = notification
         logger.info(f"收到新通知 - '{notification}'")
 
     def set_last_observation(self, observation: Optional[str]) -> None:
@@ -130,21 +140,21 @@ class WorldModel:
             print(f"WorldModel: 精力变化 {energy_delta} -> 当前精力: {self.energy}")
 
     def _get_time_period(self) -> str:
-            """根据当前小时返回时间段描述。"""
-            hour = time.localtime().tm_hour
-            
-            if 6 <= hour < 9:
-                return "清晨"
-            elif 9 <= hour < 12:
-                return "上午"
-            elif 12 <= hour < 14:
-                return "中午"
-            elif 14 <= hour < 18:
-                return "下午"
-            elif 18 <= hour < 24:
-                return "晚上"
-            else:  # 0 <= hour < 6
-                return "凌晨"
+        """根据当前小时返回时间段描述。"""
+        hour = time.localtime().tm_hour
+
+        if 6 <= hour < 9:
+            return "清晨"
+        elif 9 <= hour < 12:
+            return "上午"
+        elif 12 <= hour < 14:
+            return "中午"
+        elif 14 <= hour < 18:
+            return "下午"
+        elif 18 <= hour < 24:
+            return "晚上"
+        else:  # 0 <= hour < 6
+            return "凌晨"
             
     def get_current_time_string(self) -> str:
         """获取全中文格式化的时间字符串。"""
@@ -161,6 +171,36 @@ class WorldModel:
 
     def get_cortices_summaries(self) -> str:
         return self.cortices_summaries
+
+    # ---------- 新增：任务与注意力摘要 ----------
+    def set_focus_task(self, task_id: Optional[str]):
+        self.current_focus_task = task_id
+
+    async def refresh_task_snapshots(self):
+        """从 core task store 拉取最新任务摘要，为 Planner Prompt 提供结构化输入。"""
+        tasks = await self.core_task_store.list_all()
+        for t in tasks:
+            self.task_snapshot_store.upsert_from_instance(t)
+
+    def get_task_summary_text(self) -> str:
+        items = self.task_snapshot_store.summarize()
+        if not items:
+            return "当前没有活跃任务。"
+        parts = []
+        for item in items:
+            parts.append(
+                f"[{item['status']}] {item['id']} cortex={item['cortex']} target={item['target']} pri={item['pri']}"
+            )
+        return "\n".join(parts)
+
+    def get_focus_summary_text(self) -> str:
+        if not self.current_focus_task:
+            return "当前无焦点任务。"
+        return f"当前注意力: {self.current_focus_task}"
+
+    async def get_active_tasks_structured(self) -> List[Dict[str, Any]]:
+        await self.refresh_task_snapshots()
+        return self.task_snapshot_store.summarize()
 
     def get_context_for_motive(self) -> Dict[str, Any]:
         """
@@ -211,3 +251,13 @@ class WorldModel:
             "last_observation": self.get_last_observation(),
         }
         return context
+
+    async def get_full_system_state(self) -> Dict[str, Any]:
+        """为 MainPlanner 提供的系统总览。"""
+        active_tasks = await self.get_active_tasks_structured()
+        return {
+            "active_tasks": active_tasks,
+            "notifications": self.notifications,
+            "alerts": self.alerts,
+            "last_observation": self.last_observation,
+        }
