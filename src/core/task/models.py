@@ -1,8 +1,68 @@
+import time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, Any, Optional, List
-import time
-import uuid
+from abc import ABC, abstractmethod
+
+
+class Priority(Enum):
+    """
+    任务调度优先级定义。
+    用于内核(Kernel)判断任务的抢占行为、轮询频率以及注意力分配权重。
+    """
+
+    # 低优先级：闲暇打发时间的任务级别或后台任务 (如：阅读学习、无关群聊消息存储、长周期知识库索引)
+    # 调度表现：仅在系统无 MEDIUM 及以上任务时执行。极易被任何新事件抢占。
+    LOW = "low"
+
+    # 中优先级：常规社交与间接交互 (例：私聊信息、提及关键字、普通任务提醒)
+    # 调度策略：在同级队列中轮询。确保 Agent 在处理长任务的间隙，能优雅地处理社交请求。
+    MEDIUM = "medium"
+
+    # 高优先级：直接指令与显性中断 (例：@艾特本人、用户从终端直接下达的即时指令)
+    # 调度策略：立即抢占(Preempt)当前所有 MEDIUM/LOW 任务，触发‘挂起-恢复’流程。
+    HIGH = "high"
+
+    # 紧急优先级：系统预警或核心安全 (如：硬件故障报警、核心服务连接断开、安全防御触发、实时电话呼叫)
+    # 调度表现：拥有最高执行特权，无条件切断当前一切非 CRITICAL 流程，直至任务解决，该级别不会暴露给主规划器，专属于内核的紧急处理机制，自动设置该优先级。
+    CRITICAL = "critical"
+
+class BaseAction(ABC):
+    """
+    行为基类：定义一个行为在栈中的生命周期。
+    """
+    def __init__(self, action_id: str, priority: Priority = Priority.LOW):
+        self.action_id = action_id
+        self.priority = priority
+        self.is_completed = False
+        self.result: Any = None
+        self.is_suspended = False  # 是否被压在栈底
+
+    @abstractmethod
+    async def execute(self, cortex: Any, context: Dict) -> Optional[str]:
+        """
+        激活态逻辑：当 Action 处于栈顶时执行。
+        通常包含 LLM 调用、发送消息等。
+        """
+        pass
+
+    def on_perception(self, data: Any):
+        """
+        感知层逻辑：所有挂起的 Action 每一轮次调用此方法。
+        默认 pass，子类根据需要重写。
+        """
+        pass
+
+    def finalize(self, result: Any):
+        """
+        结算并标记完成，准备从栈中弹出并回传。
+        """
+        self.is_completed = True
+        self.result = result
+        # 这里可以触发向主 Planner 的回调注入
+        print(f"[Action {self.action_id}] 已结算: {result}")
+
 
 class TaskStatus(Enum):
     """
@@ -43,152 +103,7 @@ class TaskStatus(Enum):
         #    - 用于解决“信息过载”。例如群聊中无关消息，任务仍在记录（context_ref 更新），
         #    - 但其产生的任何事件（Event）都不会触发系统级的抢占或 READY 提拔，直到其解除静默。
 
-class Priority(Enum):
-    """
-    任务调度优先级定义。
-    用于内核(Kernel)判断任务的抢占行为、轮询频率以及注意力分配权重。
-    """
 
-    # 低优先级：闲暇打发时间的任务级别或后台任务 (如：阅读学习、无关群聊消息存储、长周期知识库索引)
-    # 调度表现：仅在系统无 MEDIUM 及以上任务时执行。极易被任何新事件抢占。
-    LOW = "low"
-
-    # 中优先级：常规社交与间接交互 (例：私聊信息、提及关键字、普通任务提醒)
-    # 调度策略：在同级队列中轮询。确保 Agent 在处理长任务的间隙，能优雅地处理社交请求。
-    MEDIUM = "medium"
-
-    # 高优先级：直接指令与显性中断 (例：@艾特本人、用户从终端直接下达的即时指令)
-    # 调度策略：立即抢占(Preempt)当前所有 MEDIUM/LOW 任务，触发‘挂起-恢复’流程。
-    HIGH = "high"
-
-    # 紧急优先级：系统预警或核心安全 (如：硬件故障报警、核心服务连接断开、安全防御触发、实时电话呼叫)
-    # 调度表现：拥有最高执行特权，无条件切断当前一切非 CRITICAL 流程，直至任务解决，该级别不会暴露给主规划器，专属于内核的紧急处理机制，自动设置该优先级。
-    CRITICAL = "critical"
-
-class GoalStatus(Enum):
-    """
-    GoalStatus: 模拟人脑目标的生命周期状态。
-    决定了目标在 Task 内部的显隐性、优先级以及是否触发回调。
-    """
-
-    # --- 1. 潜意识阶段 (Subconscious Phase) ---
-    PENDING = auto()      
-    """
-    [屏蔽态/挂起]：目标已存在，但处于“潜意识”边缘。
-    - 表现：不进入 LLM 上下文，不占用 Focus。
-    - 触发：等待小模型检定(check_arousal)命中关键词或语义。
-    """
-
-    # --- 2. 显意识阶段 (Conscious Phase) ---
-    ACTIVE = auto()       
-    """
-    [激活态/聚焦]：目标被唤醒，进入“显意识”中心。
-    - 表现：目标描述被注入 Context Window，Task 申请 READY 状态请求执行。
-    - 触发：检定命中或由其他 Task 强制激活。
-    """
-
-    # --- 3. 阻塞执行阶段 (Blocking Phase) ---
-    BLOCKING = auto()     
-    """
-    [专注态/阻塞]：该目标要求 Task 屏蔽低优先级干扰。
-    - 表现：Task 进入高阈值监听模式，除了本目标的回传或其他特高优先级信号，不响应任何刺激。
-    """
-
-    # --- 4. 终结阶段 (Terminal Phase) ---
-    COMPLETED = auto()    
-    """
-    [达成/交割]：任务逻辑已闭环。
-    - 表现：最后一次将结果载荷(Payload)注入上下文，随后准备销毁并回传。
-    """
-
-    FAILED = auto()       
-    """
-    [逻辑失败]：子 Planner 判定该目标在当前环境下无法达成。
-    - 表现：打包失败原因，回传给原请求者。
-    """
-
-    TIMEOUT = auto()      
-    """
-    [遗忘/失去耐心]：超过 TTL 设置的时间。
-    - 表现：目标被系统强制回收，模拟人脑的“由于等太久而放弃”。
-    """
-
-    DISCARDED = auto()    
-    """
-    [主动放弃]：由于更高优先级的目标冲突，该目标被强制终止。
-    - 表现：模拟人脑在紧急情况下丢弃次要念头。
-    """
-
-class Goal:
-    def __init__(
-        self, 
-        description: str, 
-        priority: Priority = Priority.LOW, 
-        timeout: int = 300, 
-        origin_task_id: str = None,
-        metadata: Dict[str, Any] = None
-    ):
-        """
-        模拟人脑的“目标”或“动机单元”。
-        它是 Task 内部的动力源，具备自我检定能力，决定了 Task 何时从“漫无目的”转向“精准聚焦”。
-        """
-
-        # 1. 基础身份与动力学属性
-        self.goal_id = str(uuid.uuid4())[:8]
-        self.description = description
-        self.priority = Priority(priority)  # 决定该目标在 Task 内部的排序
-        
-        # 2. 生命周期与超时管理 (TTL)
-        self.created_at = time.time()
-        self.timeout = timeout
-        self.status = GoalStatus.PENDING
-        
-        # 3. 异步回传锚点 (Return Pointer)
-        # 记录是谁发起的请求，完成后结果该飞回哪里
-        self.origin_task_id = origin_task_id
-        self.result_payload: Any = None
-        
-        # 4. 语义检定属性 (用于小模型检定)
-        # 存储目标的核心语义特征，用于在“屏蔽态”下匹配外部输入
-        self.keywords = self._extract_keywords(description)
-        self.embedding_vector = None  # 可选：预留给语义向量空间
-        
-        # 5. 状态记录
-        self.is_blocked = False  # 该目标是否要求所属 Task 进入专注(BLOCK)态
-        self.metadata = metadata or {}
-
-    def _extract_keywords(self, text: str):
-        # 简单的启发式提取，或者调用极小模型生成关键词
-        # 用于 L1/L2 级的快速检定
-        return set(text.split()) 
-
-    def check_timeout(self) -> bool:
-        """检查目标是否超时"""
-        if time.time() - self.created_at > self.timeout:
-            self.status = GoalStatus.TIMEOUT
-            return True
-        return False
-
-    def is_relevant(self, incoming_text: str) -> bool:
-        """
-        小模型检定逻辑 (L2 Gatekeeper)
-        决定当前外部输入是否足以“拉回”注意力
-        """
-        # 这里可以接入你的 Embedding 相似度计算
-        # 或者简单的关键词碰撞逻辑
-        for word in self.keywords:
-            if word in incoming_text:
-                return True
-        return False
-
-    def finalize(self, result: Any, success: bool = True):
-        """完成目标并打包结果"""
-        self.status = GoalStatus.COMPLETED if success else GoalStatus.FAILED
-        self.result_payload = result
-        self.end_time = time.time()
-
-    def __repr__(self):
-        return f"<Goal {self.goal_id}: {self.description[:20]}... [Prio:{self.priority}]>"
     
 @dataclass
 class Task:
@@ -238,13 +153,16 @@ class Task:
     motive: str = ""           # 初始意图
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
-    goal: List[Goal] = field(default_factory=list)  # 任务内的目标列表，支持多目标管理
+    actions: List[BaseAction] = field(default_factory=list)  # 进程内的行为列表，支持多行为管理
 
     # 空槽位容器：{ "source_goal_id": "result" }
     anchors: Dict[str, str] = field(default_factory=dict) # 用于存放异步回传的锚点数据，如工具调用结果、外部事件等
 
     def to_dict(self):
         return {k: (v.value if isinstance(v, Enum) else v) for k, v in self.__dict__.items()}
+    
+    def add_action(self, action: BaseAction):
+        self.actions.append(action)
     
 
     # --- 调度执行策略：高优先级快线 (High-Priority Fast Track) ---
@@ -368,87 +286,74 @@ class Task:
     # 笔记 4：阻塞的特权 (The Privilege of BLOCK)
     # - 逻辑：只有 BLOCK 具有“唤醒锁定”。一旦数据到达，它会强制从列表中跳出来向内核申请 READY 或直接抢占。
 
-# --- 架构演进：目标驱动与实体扁平化 (Goal-Driven Flattening) ---
+# --- 架构演进：行为栈驱动与实体扁平化 (Action-Stack Driven) ---
 
-    # 笔记 2：目标作为动力源 (Goal as Motive Power)
-    # - 每一个 Task 的运行不再是随机的，而是由 Goal 列表驱动。
-    # - 空目标列表 = 纯粹的无目的回应消息。
-    # - 外部注入 = 强制向 Task 写入一个高权重 Goal。
+    # 笔记 1：Action 作为动力源 (Action as Motive Power)
+    # - 每个 Task 的运行由 Action 栈驱动。栈顶 Action 拥有【显意识】执行权。
+    # - 空栈 = 纯粹的无目的观察/环境监控（低功耗模式）。
+    # - 行为注入 = 向 Task 压入一个新的 Action 实例，瞬间改变其表现。
 
-    # 笔记 3：上下文请求的本质 (Context Request)
-    # - 跨 Task 请求不再是“寻求帮助的任务”，而是一个【待完成的目标包】。
-    # - 逻辑：A 任务 -> 生成 Goal_Object -> 投递给 B 任务。
-    # - B 任务在下一次 Focus 时，优先消费优先级最高的 Goal。
+    # 笔记 2：跨任务请求的本质 (Cross-Task Delegation)
+    # - 逻辑：Task_A 生成一个 Request -> 投递给 Task_B。
+    # - Task_B 接收后，初始化一个匹配该 Request 的 Action（如 AskHelpAction）并压栈。
+    # - 优势：B 不需要理解 A 的整体逻辑，只需要运行这个特定的 Action 插件。
 
-    # 笔记 4：优势 - 动态覆盖 (Dynamic Overriding)
-    # - 解决了“不知为何而战”的问题。AI 在群聊里的表现完全取决于当前 Goal。
-    # - 实现了无缝的思维切换：不需要重启进程，只需要重写当前目标。
+    # 笔记 3：动态覆盖与状态恢复 (Dynamic Overriding & Recovery)
+    # - 压栈即覆盖：高优先级的 Action 压入时，原 Action 自动进入【潜意识挂起】。
+    # - 弹栈即恢复：当前 Action 销毁后，底层 Action 重新获得焦点，实现思维无缝切换。
 
-# --- 架构细节：多级目标检定 (Multi-level Goal Verification) ---
+# --- 架构细节：二元状态检定 (Dual-State Verification) ---
     
-    # 笔记 1：检定解耦 (Verification Decoupling)
-    # - 原则：不要让 LLM 负责“判断任务是否结束”的轮询，这太贵了。
-    # - 方案：在 Goal 类中内置轻量级检测器（基于关键词或 Embedding）。
+    # 笔记 1：显隐职能分离 (Conscious vs. Subconscious)
+    # - 激活态 (execute)：栈顶 Action 运行，负责 LLM 推理、社交表达、主动决策（System 2）。
+    # - 挂起态 (on_perception)：非栈顶 Action 运行，负责静默监听、关键词过滤、目标捕获（System 1）。
 
-    # 笔记 2：观察态的恢复逻辑 (Natural Regression to Observation)
-    # - 逻辑：当 Goal 堆栈为空时，Task 自动进入【无固定目标状态】。
-    # - 表现：此时的 Planner 仅执行低频的“环境监控”，不再主动发起高能耗思考。
+    # 笔记 2：轻量化结案 (Lightweight Settlement)
+    # - 原则：挂起态的 on_perception 必须极快（正则/Embedding），严禁在挂起时调用 LLM。
+    # - 效果：如果 Action 在挂起期间“偷听”到了答案，可立即触发 finalize 自我销毁。
 
-    # 笔记 3：强制检定的时机 (Check Timing)
-    # - 被动检定：每一条外部消息进来时，触发小模型过滤。
-    # - 主动检定：每次 exec 任务执行完毕，子 Planner 必须显式报告当前 Goal 状态。
+    # 笔记 3：防抖与确认机制 (Confirmation Logic)
+    # - 逻辑：当 on_perception 命中时，若语义模糊，可申请临时提权至栈顶，让 LLM 做最终确认。
+    # - 目的：平衡响应速度与判定准确度。
 
-    # 笔记 4：小模型防抖 (Small-Model Debouncing)
-    # - 策略：如果小模型认为 Goal 结束了，但 LLM 认为没结束，以 LLM 为准。
-    # - 目的：防止语义误判导致的“半途而废”。
-
-# --- 架构逻辑：Goal 的潜意识过滤与上下文动态加载 ---
+# --- 架构逻辑：Action 的潜意识过滤与上下文加载 ---
     
-    # 笔记 1：上下文的延迟加载 (Lazy Context Loading)
-    # - 语义：Goal 在未被激活时，其相关的上下文碎片不进入显意识（LLM Window）。
-    # - 目的：节省 Token，防止无关信息干扰主线思维。
+    # 笔记 1：上下文延迟加载 (Lazy Context Injection)
+    # - 只有处于栈顶（ACTIVE）的 Action，其相关的私有背景数据才会被加载进 LLM 上下文。
+    # - 挂起态 Action 的数据保持静默，最大化节省 Token 并减少噪音。
 
-    # 笔记 2：检定作为“唤醒钩子” (Verification as Wake-up Hook)
-    # - 流程：Input -> Small_Model_Check(Goal_Criteria) -> If Match: Focus_Task().
-    # - 特性：这是一种逻辑上的“中断”。只有命中目标的刺激，才能把 Task 从 READY 拽入 FOCUS。
+    # 笔记 2：感官唤醒钩子 (Sensory Wake-up Hook)
+    # - 流程：Input -> 遍历 action_stack.on_perception() -> If Match: Action.finalize()。
+    # - 特性：这是一种逻辑上的“后台中断”，即便 AI 正在忙于 B，A 的结果也能被实时捕获。
 
-    # 笔记 3：结案清理 (The Wrap-up & Destruction)
-    # - 核心：销毁前必须完成【最后一次上下文合并】。
-    # - 意义：确保回复给用户或原目标的结果是带有“目标达成确认”的，而非没头没脑的截断。
+    # 笔记 3：遗产继承与销毁 (Legacy & Destruction)
+    # - 核心：Action 在销毁（is_completed）前，必须将采集到的 Result 提交给主 Planner。
+    # - 回传：主 Planner 负责将这份“遗产”注入到最初发起请求的锚点任务中。
 
-    # 笔记 4：超时管理 (TTL - Time To Live)
-    # - 机制：每一个 Goal 自带 TTL。
-    # - 表现：模拟人脑的“遗忘”或“放弃”。如果这件事太久没回音，AI 就不再惦记了。
-
-# --- 架构细节：异步回传锚点与策略化阻塞 ---
+# --- 架构细节：异步回传锚点与行为阻塞 ---
     
-    # 笔记 1：回传位置指针 (Return Pointer / Callback Anchor)
-    # - 逻辑：在 Task 内部建立一个【空槽位】，专门等待特定 target_id 的结果注入。
-    # - 效果：任务不需要死等，它可以继续处理其他低优先级的微目标（Micro-goals）。
+    # 笔记 1：回调锚点 (Callback Anchors)
+    # - 逻辑：在原任务中保留一个等待特定 action_id 结果的逻辑槽位。
+    # - 体验：就像你在洗碗（闲聊 Action），脑子里挂着个“等快递”的念头（监听），快递一到（结果回传），立刻处理。
 
-    # 笔记 2：自主阻塞权限 (Autonomous Blocking Power)
-    # - AI 决策：子 Planner 根据目标的【急迫度】决定是否调用 block_self()。
-    # - 价值：模拟了人脑的“心不在焉”与“全神贯注”。
+    # 笔记 2：行为阻塞权限 (Blocking Power)
+    # - 逻辑：栈顶 Action 有权决定是否 block_task()，从而阻止下层的感知或上层的干扰。
+    # - 模拟：全神贯注处理紧急事件时，人会暂时屏蔽周围的所有社交杂音。
 
-    # 笔记 3：状态切换的平滑性 (Seamless Transition)
-    # - 过程：B 回传结果 -> 激活 A 的回传锚点 -> A 优先级瞬间拉满。
-    # - 体验：就像你正在洗碗（闲聊），突然想起刚才查的公式（结果回传），瞬间擦手去写代码。
+    # 笔记 3：超时与放弃 (Action TTL)
+    # - 机制：每个 Action 自带生存时间（TTL）。
+    # - 表现：模拟“放弃寻找”。如果一个 AskAction 挂起太久，自动销毁并向主 Planner 报告失败。
 
-    # 笔记 4：防止逻辑孤岛 (Orphan Goal Prevention)
-    # - 机制：回传锚点必须带 TTL。如果 B 挂了，A 必须能通过超时机制自我唤醒，
-    #   并报错“对方没理我”，而不是永久等下去。
-
-# --- 架构细节：优先级共享与继承逻辑 ---
+# --- 架构细节：优先级继承与动态衰减 ---
     
     # 笔记 1：优先级继承 (Priority Inheritance)
-    # - 逻辑：Task 的优先级 = max(自身基础分, 内部所有活动 Goal 的最高分)。
-    # - 效果：解决了“小任务承载大目标”时的动力不足问题。
+    # - Task 优先级 = max(所有 Action.priority)。
+    # - 结果：当一个 Task 被注入了“紧急求助”Action 后，它在主调度器中的排期会瞬间提前。
 
-    # 笔记 2：动态衰减 (Dynamic Decay)
-    # - 模拟：人脑的兴奋感会随时间降低。
-    # - 逻辑：某些 Goal 如果长时间未达成，其优先级可以从 HIGH 逐渐降级到 MEDIUM，
-    #   避免某个死循环目标永久霸占注意力。
+    # 笔记 2：兴奋度衰减 (Attention Decay)
+    # - 逻辑：某些 Action 如果长期处于挂起态，其优先级会动态下降。
+    # - 目的：防止旧的、未完成的任务永远占用系统资源。
 
-    # 笔记 3：阈值判定 (Threshold Check)
-    # - 逻辑：在 BLOCK 期间，只有 Goal.priority > Task.interrupt_threshold 的信号，
-    #   才能修改 Task 的状态。
+    # 笔记 3：抢占阈值 (Preemption Threshold)
+    # - 逻辑：只有 New_Action.priority > Current_Action.priority + Buffer 才能触发压栈。
+    # - 目的：防止 AI 因为琐碎小事频繁切换话题，导致表现得像“多动症”。

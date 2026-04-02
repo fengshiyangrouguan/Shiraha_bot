@@ -1,9 +1,10 @@
 import shlex
-import asyncio
 from typing import List, Dict, Any
 from src.common.logger import get_logger
 from src.common.di.container import container
 from src.core.task.task_manager import TaskManager
+from src.core.task.models import Priority, TaskStatus, BaseAction
+from src.core.task.task_store import TaskStore
 from src.core.kernel.scheduler import Scheduler
 
 logger = get_logger("kernel_interpreter")
@@ -17,6 +18,7 @@ class KernelInterpreter:
     def __init__(self):
         self.task_manager: TaskManager = container.resolve(TaskManager)
         self.scheduler: Scheduler = container.resolve(Scheduler)
+        self.task_store: TaskStore = container.resolve(TaskStore)
 
     async def execute_batch(self, shell_commands: str) -> List[Dict[str, Any]]:
         """
@@ -49,9 +51,9 @@ class KernelInterpreter:
 
         if primary_cmd == "task":
             return await self._handle_task_cmd(args[1:])
-        elif primary_cmd == "idle":
-            logger.info("Kernel 进入 IDLE 轮询模式")
-            return "system_idle"
+        elif primary_cmd == "action":
+            # 处理 action 相关指令 (示例: action push --task_id task_01 --action_id act_01 --pri high)
+            return await self._handle_action_cmd(args[1:])
         else:
             raise ValueError(f"Unknown system call: {primary_cmd}")
 
@@ -65,15 +67,15 @@ class KernelInterpreter:
         logger.info(f"任务指令: {sub_cmd} | 参数: {params}")
 
         if sub_cmd == "create":
-            # 示例: task create --cortex qq --target 12345 --pri 80
+            # 示例: task create --cortex qq --target 12345 --pri low --motive "闲聊"
             if self.task_manager:
                 return await self.task_manager.create_task(
                     cortex=params.get('cortex', ''),
                     target_id=params.get('target', ''),
-                    priority=int(params.get('pri', 50)),
+                    priority=self._parse_priority(params.get('pri')),
                     motive=params.get('motive', '')
                 )
-            return f"Task created in {params.get('cortex')}"
+            return f"对 {params.get('cortex')} 的任务已创建，目标 {params.get('target')}"
 
         elif sub_cmd == "exec":
             # 示例: task exec --id task_01 --entry run_step
@@ -91,17 +93,32 @@ class KernelInterpreter:
             return f"任务 {params.get('id')} 已挂起"
         
         elif sub_cmd == "mute":
-            # 示例: task mute --id task_01 --pri 80
-            if self.task_manager:
-                return await self.task_manager.suspend_task(params.get('id'))
+            # 示例: task mute --id task_01
+            task_id = params.get('id')
+            if self.task_store and task_id:
+                return await self.task_store.update_status(task_id, TaskStatus.MUTED)
             return f"任务 {params.get('id')} 已静默"
+
+        elif sub_cmd == "block":
+            # 示例: task block --id task_01
+            if self.task_manager:
+                return await self.task_manager.block_task(params.get('id'))
+            return f"任务 {params.get('id')} 已阻塞"
+
+        elif sub_cmd == "adjust_prio":
+            # 示例: task adjust_prio --id task_01 --pri high
+            if self.task_manager:
+                return await self.task_manager.adjust_priority(
+                    task_id=params.get('id'),
+                    priority=self._parse_priority(params.get('pri'))
+                )
+            return f"任务 {params.get('id')} 已调整优先级"
         
         elif sub_cmd == "resume":
             # 示例: task resume --id task_01
             if self.task_manager:
                 return await self.task_manager.resume_task(params.get('id'))
             return f"任务 {params.get('id')} 已恢复"
-        
         
         elif sub_cmd == "kill":
             if self.task_manager:
@@ -111,6 +128,29 @@ class KernelInterpreter:
 
         else:
             raise ValueError(f"未知的任务指令: {sub_cmd}")
+        
+    async def _handle_action_cmd(self, args: List[str]) -> Any:
+        """
+        处理 action 相关的子指令: push, pop, complete...
+        """
+        sub_cmd = args[0].lower()
+        params = self._parse_args(args[1:])
+
+        logger.info(f"行为指令: {sub_cmd} | 参数: {params}")
+        
+        if sub_cmd == "push":
+            # 示例: action push --task_id task_01 --action_id act_01 --action_name small_talk --pri high
+            task_id = params.get('task_id')
+            action_id = params.get('action_id')
+            action_name = params.get('action_name')
+            priority = self._parse_priority(params.get('pri'))
+            if self.task_store and task_id and action_id:
+                task = await self.task_store.get(task_id)
+                if task:
+                    task.add_action(BaseAction(action_id=action_id, priority=priority))
+                    await self.task_store.save(task)
+                    return f"行为 {action_id} 已添加到任务 {task_id}"
+            return f"无法添加行为 {action_id} 到任务 {task_id}"
 
     def _parse_args(self, arg_list: List[str]) -> Dict[str, str]:
         """
@@ -139,3 +179,38 @@ class KernelInterpreter:
             except Exception:
                 return str(res)
         return res
+
+    def _parse_priority(self, value: Any) -> Priority:
+        """
+        将外部参数解析为 Priority 枚举。
+        兼容两种输入：
+        1) 枚举名/值字符串：critical/high/medium/low
+        2) 传统数字刻度：0~100
+        """
+        if isinstance(value, Priority):
+            return value
+        if value is None:
+            return Priority.LOW
+
+        text = str(value).strip().lower()
+        if text in {Priority.CRITICAL.value, "critical"}:
+            return Priority.CRITICAL
+        if text in {Priority.HIGH.value, "high"}:
+            return Priority.HIGH
+        if text in {Priority.MEDIUM.value, "medium"}:
+            return Priority.MEDIUM
+        if text in {Priority.LOW.value, "low"}:
+            return Priority.LOW
+
+        try:
+            num = float(text)
+        except Exception:
+            return Priority.LOW
+
+        if num >= 90:
+            return Priority.CRITICAL
+        if num >= 70:
+            return Priority.HIGH
+        if num >= 40:
+            return Priority.MEDIUM
+        return Priority.LOW
