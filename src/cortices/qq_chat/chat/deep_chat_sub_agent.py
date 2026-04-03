@@ -4,7 +4,7 @@ import json
 import asyncio
 from typing import Dict, Any, Optional, TYPE_CHECKING, List
 
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.chat_stream import QQChatStream
@@ -22,7 +22,7 @@ from src.common.action_model.action_spec import ActionSpec
 logger = get_logger("qq_deep_chat")
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class DeepChatSubAgent():
     """

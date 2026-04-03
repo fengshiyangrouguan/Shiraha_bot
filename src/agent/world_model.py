@@ -12,6 +12,12 @@ from src.agent.task import TaskPriority, TaskRecord, TaskStatus, TaskStore
 from src.core.task.task_store import TaskStore as CoreTaskStore
 from src.core.task.models import TaskInstance
 
+try:
+    from src.core.memory import UnifiedMemory
+    MEMORY_AVAILABLE = True
+except ImportError:
+    MEMORY_AVAILABLE = False
+
 logger = get_logger("world_model")
 
 class WorldModel:
@@ -53,19 +59,25 @@ class WorldModel:
         self.alerts: List[str] = []
 
         # --- 4. 初始化记忆 ---
-        
-        # 使用字典来存储不同来源的事件流/状态
+
+        # 使用字典来存储不同来源的事件流/状态 (兼容旧代码)
         # 这是 WorldModel 的核心，用于存储各个 Cortex 维护的特定数据，纯内存操作
         self.cortex_data: Dict[str, BaseModel] = {}
 
-        self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
-        # TODO: 以后来一个随机的初始动作
-        # self.short_term_memory.append(f"[{time.strftime('%H:%M:%S')}] 我刚刚睡醒，感觉有点迷糊，需要一会儿才能完全进入状态。")
+        # 新：统一记忆系统
+        self.unified_memory: Optional[UnifiedMemory] = None
+        if MEMORY_AVAILABLE:
+            try:
+                self.unified_memory = container.resolve(UnifiedMemory)
+            except Exception:
+                pass
 
-        self.long_term_memory = None # 长期记忆占位符
+        # 短期记忆（保持兼容）
+        self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
 
         # 心流缓存，缓存一些阅读，编程，等产生的感悟，形成侧回路，避免影响其他cortex
         self.flow_cache: Deque[str] = deque(maxlen=15)
+
         # Prompt 摘要缓存
         self.task_snapshot_store: TaskStore = TaskStore()
         # 内核任务仓库（生命周期控制）
@@ -74,6 +86,11 @@ class WorldModel:
         except Exception:
             # 容器中尚未注册时，使用内置实例
             self.core_task_store = CoreTaskStore()
+
+    async def initialize_memory(self, unified_memory: UnifiedMemory):
+        """初始化统一记忆系统"""
+        self.unified_memory = unified_memory
+        logger.info("WorldModel: 统一记忆系统已连接")
 
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """

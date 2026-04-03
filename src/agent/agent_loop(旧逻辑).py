@@ -14,13 +14,14 @@ from src.common.database.database_manager import DatabaseManager
 from src.common.database.database_model import BehaviorHistoryDB
 from src.common.di.container import container
 from src.common.logger import get_logger
-from src.cortices.manager import CortexManager
+from src.cortex_system import CortexManager
 from src.llm_api.factory import LLMRequestFactory
 from src.core.task.task_store import TaskStore as CoreTaskStore
 from src.core.task.task_manager import TaskManager
 from src.core.kernel.scheduler import Scheduler
 from src.core.kernel.interpreter import KernelInterpreter
 from src.core.kernel.interrupt_handler import InterruptHandler
+from src.core.kernel.event_loop import EventLoop, get_event_loop
 
 logger = get_logger("agent_loop")
 
@@ -54,7 +55,7 @@ class AgentLoop:
         # ---- Agent 认知层组件 ----
         self.world_model: WorldModel = container.resolve(WorldModel)
         self.motive_engine = MotiveEngine()
-        self.main_planner = MainPlanner()
+        self.main_planner: MainPlanner = MainPlanner()
         self.cortex_manager: CortexManager = container.resolve(CortexManager)
         self.llm_factory: LLMRequestFactory = container.resolve(LLMRequestFactory)
         self.database_manager: DatabaseManager = container.resolve(DatabaseManager)
@@ -143,7 +144,7 @@ class AgentLoop:
         )
 
         prompt = f"""
-请把下面这轮 agent 行为历史抽取为结构化 JSON，用于长期记忆中的“行为历史”表。
+请把下面这轮 agent 行为历史抽取为结构化 JSON，用于长期记忆中的"行为历史"表。
 
 ## 已知信息
 - motive: {motive}
@@ -319,7 +320,7 @@ class AgentLoop:
     async def _execute_shell_plan(self, motive: str, shell_commands: str):
         """
         将 MainPlanner 产出的 Shell 指令交给 Kernel Interpreter 执行，并记录观察。
-        这里只关注“指令 -> 执行结果”链路，真实工具/子规划器由 core 层承接。
+        这里只关注"指令 -> 执行结果"链路，真实工具/子规划器由 core 层承接。
         """
         if not shell_commands:
             logger.warning("Planner 没有产出任何指令。")
@@ -402,50 +403,44 @@ class AgentLoop:
             )
 
     async def _run_once(self):
-        try:
+        """旧的循环逻辑已废弃，保留用于兼容性
 
-            self.cortex_manager.update_cortices_summaries()
-            motive = await self.motive_engine.generate_motive()
-
-            if not motive:
-                logger.info("当前没有生成新的动机。")
-                return
-
-            self.world_model.motive = motive
-            # 刷新任务快照供 Planner 使用
-            await self.world_model.refresh_task_snapshots()
-            shell_plan = await self.main_planner.plan(motive, self.world_model.get_last_observation())
-            await self._execute_shell_plan(motive, shell_plan)
-            logger.info(f"动机 '{motive}' 已处理完成。")
-        except asyncio.CancelledError:
-            logger.warning("AgentLoop 任务被取消。")
-            raise
-        except Exception as exc:
-            logger.error(f"AgentLoop 运行出错: {exc}", exc_info=True)
-
-    async def _run(self):
+        现在使用事件驱动的 EventLoop 替代固定循环
+        """
         self._is_running = True
-        logger.info(f"思维循环已启动，心跳间隔 {self.heartbeat_interval} 秒。")
+        logger.info("AgentLoop 已迁移到事件驱动模式（旧循环已废弃）")
+
+        # 直接使用 EventLoop
+        event_loop = get_event_loop()
+        await event_loop.start()
+
+        # 保持运行
         while self._is_running:
-            try:
-                await self._run_once()
-                await asyncio.sleep(self.heartbeat_interval)
-            except asyncio.CancelledError:
-                logger.info("思维循环已停止。")
-                break
-            except Exception as exc:
-                logger.error(f"思维循环异常: {exc}", exc_info=True)
-                await asyncio.sleep(self.heartbeat_interval)
+            await asyncio.sleep(1)
 
     def start(self):
+        """
+        启动事件驱动的主循环
+
+        使用 EventLoop 替代旧的固定心跳循环
+        """
         if not self._is_running:
             self._main_task = asyncio.create_task(self._run())
         else:
             logger.warning("AgentLoop 已经在运行中。")
 
     def stop(self):
+        """
+        停止事件驱动的主循环
+        """
         if self._is_running and self._main_task:
             self._is_running = False
-            self._main_task.cancel()
+            self._main_task.close()
+
+            # 同时停止 EventLoop
+            event_loop = get_event_loop()
+            import asyncio
+            asyncio.create_task(event_loop.stop())
+
         else:
             logger.warning("AgentLoop 当前未在运行。")

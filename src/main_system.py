@@ -11,11 +11,12 @@ from src.common.database.database_manager import DatabaseManager
 from src.common.di.container import container
 from src.common.logger import get_logger
 from src.common.tool_registry import ToolRegistry
-from src.cortices.manager import CortexManager
+from src.cortex_system import CortexManager
 from src.llm_api.factory import LLMRequestFactory
-from src.memory_system.repositories.expression_pattern_repository import ExpressionPatternRepository
-from src.memory_system.services.expression_learning_service import ExpressionLearningService
-from src.memory_system.services.expression_selector_service import ExpressionSelectorService
+from src.core.memory import UnifiedMemory
+from src.core.mind import Mind
+from src.core.memory import LongTermMemory, MemoryRetriever
+from src.core.kernel import EventLoop
 from src.platform.platform_manager import PlatformManager
 from src.plugin_system.core.plugin_loader import PluginLoader
 from src.plugin_system.core.plugin_manager import PluginManager
@@ -26,13 +27,17 @@ logger = get_logger("main_system")
 class MainSystem:
     def __init__(self, config_service: ConfigService):
         self.config_service = config_service
-        self.agent_loop: Optional[AgentLoop] = None
         self.world_model: Optional[WorldModel] = None
         self.cortex_manager: Optional[CortexManager] = None
         self.platform_manager: Optional[PlatformManager] = None
         self.plugin_loader: Optional[PluginLoader] = None
         self.plugin_manager: Optional[PluginManager] = None
         self.tool_registry: Optional[ToolRegistry] = None
+        self.long_term_memory: Optional[LongTermMemory] = None
+        self.memory_retriever: Optional[MemoryRetriever] = None
+        self.unified_memory: Optional[UnifiedMemory] = None
+        self.mind: Optional[Mind] = None
+        self.event_loop: Optional[EventLoop] = None
 
     async def initialize(self):
         config_bot: BotConfig = self.config_service.get_config("bot")
@@ -69,16 +74,6 @@ class MainSystem:
         self.database_manager = DatabaseManager()
         await self.database_manager.initialize_database()
         self.tool_registry = ToolRegistry()
-        self.expression_pattern_repository = ExpressionPatternRepository(self.database_manager)
-        self.expression_learning_service = ExpressionLearningService(
-            self.database_manager,
-            self.llm_request_factory,
-        )
-        self.expression_selector_service = ExpressionSelectorService(
-            self.expression_pattern_repository,
-            self.llm_request_factory,
-            container.resolve(BotConfig),
-        )
 
         self.plugin_loader = PluginLoader(plugin_root=Path("src/plugins"))
         self.plugin_manager = PluginManager(tool_registry=self.tool_registry)
@@ -90,14 +85,30 @@ class MainSystem:
         container.register_instance(WorldModel, self.world_model)
         container.register_instance(LLMRequestFactory, self.llm_request_factory)
         container.register_instance(DatabaseManager, self.database_manager)
-        container.register_instance(ExpressionPatternRepository, self.expression_pattern_repository)
-        container.register_instance(ExpressionLearningService, self.expression_learning_service)
-        container.register_instance(ExpressionSelectorService, self.expression_selector_service)
         container.register_instance(PlatformManager, self.platform_manager)
         container.register_instance(CortexManager, self.cortex_manager)
 
-        self.agent_loop = AgentLoop()
-        container.register_instance(AgentLoop, self.agent_loop)
+        # 初始化 UnifiedMemory (需要先初始化 LongTermMemory 和 MemoryRetriever)
+        self.long_term_memory = LongTermMemory()
+        self.memory_retriever = MemoryRetriever(self.long_term_memory)
+
+        self.unified_memory = UnifiedMemory()
+        await self.unified_memory.initialize(
+            long_term_memory=self.long_term_memory,
+            retriever=self.memory_retriever
+        )
+
+        container.register_instance(LongTermMemory, self.long_term_memory)
+        container.register_instance(MemoryRetriever, self.memory_retriever)
+        container.register_instance(UnifiedMemory, self.unified_memory)
+
+        # 初始化 Mind 主脑提示词拼接器
+        self.mind = Mind()
+        container.register_instance(Mind, self.mind)
+
+        # 初始化 EventLoop (事件驱动核心循环)
+        self.event_loop = EventLoop()
+        container.register_instance(EventLoop, self.event_loop)
 
         logger.info("--- 核心组件注册完成 ---")
 
@@ -109,10 +120,6 @@ class MainSystem:
         container.register_instance(LLMApiConfig, llm_api_config)
         container.register_instance(BotConfig, bot_config)
 
-    async def schedule_tasks(self):
-        while True:
-            await asyncio.sleep(60)
-
     async def shutdown(self):
         logger.info("系统开始关闭...")
         if self.agent_loop:
@@ -123,6 +130,12 @@ class MainSystem:
 
         if self.platform_manager:
             await self.platform_manager.shutdown_all_adapters()
+
+        if self.unified_memory:
+            await self.unified_memory.shutdown()
+
+        if self.database_manager:
+            await self.database_manager.close()
 
         await asyncio.sleep(1)
         logger.info("系统已关闭。")

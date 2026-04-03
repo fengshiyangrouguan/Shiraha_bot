@@ -10,12 +10,12 @@ from src.common.logger import get_logger
 from src.cortices.qq_chat.chat.replyer import QQReplyer
 from src.cortices.qq_chat.cortex import QQChatCortex
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.llm_api.factory import LLMRequestFactory
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 logger = get_logger("quick_reply")
 

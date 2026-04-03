@@ -2,7 +2,7 @@
 from typing import Dict, Any, TYPE_CHECKING, List
 import json
 from src.common.action_model.tool_result import ToolResult
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.common.di.container import container
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
@@ -18,7 +18,7 @@ logger = get_logger("qq_deep_chat")
 
 if TYPE_CHECKING:
     
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class EnterDeepChatTool(BaseTool):
     """

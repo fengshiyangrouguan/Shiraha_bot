@@ -1,6 +1,6 @@
 import json
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.agent.world_model import WorldModel
 from src.cortices.reading.reading_data import ReadingData,Book
 from datetime import datetime
@@ -10,7 +10,7 @@ from src.common.action_model.tool_result import ToolResult
 from src.common.logger import get_logger
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 logger = get_logger("reading")
 

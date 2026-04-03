@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from src.common.database.database_model import ConversationInfoDB, EventDB
 from src.common.di.container import container
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
@@ -18,7 +18,7 @@ from src.common.logger import get_logger
 logger = get_logger("qq_chat")
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 
 class EnterQQAppTool(BaseTool):

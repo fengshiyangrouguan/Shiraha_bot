@@ -4,7 +4,7 @@ import os
 import re
 from typing import Optional, TYPE_CHECKING,List
 
-from src.cortices.base_cortex import BaseCortex
+from src.cortex_system.base_cortex import BaseCortex
 from src.cortices.reading.reading_data import ReadingData,Book
 from src.common.di.container import container
 from src.cortices.reading.utils.book_file_process import slice_and_tag_book,load_all_books,save_book_to_db
