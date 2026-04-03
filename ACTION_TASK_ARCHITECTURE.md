@@ -527,3 +527,87 @@ Scheduler 选中 Task
 `Scheduler` 负责“分配焦点”。
 
 这是当前讨论下最扁平、最稳定、最适合继续演进的方案。
+
+---
+
+## 14. 现有逻辑时序图
+
+下面这张图将旧流程修正为当前讨论后的现有逻辑：
+
+- 外部信号先进入 `InterruptHandler`
+- `Scheduler` 只负责焦点调度
+- `TaskManager` 负责状态落地
+- `Action` 通过 `execute()` / `on_perception()` 返回 `ActionSignal`
+- `Planner` 在 `Action.execute()` 内部被调用，而不是在外部单独插一层
+
+```mermaid
+sequenceDiagram
+    participant C as Cortex (感知/执行层)
+    participant I as InterruptHandler (信号入口)
+    participant S as Scheduler (调度器)
+    participant TM as TaskManager (状态落地)
+    participant T as TaskStore (任务存储)
+    participant A as Top Action (栈顶行为)
+    participant P as Planner (统一规划器)
+
+    Note over C,P: [1. 初始化与空闲态]
+    S->>T: 读取 READY / BACKGROUND / SUSPENDED 任务
+    T-->>S: 返回当前可调度任务
+    S->>T: 选择一个任务进入 FOCUS
+    T-->>S: 焦点任务已更新
+    S->>A: execute(task_view, runtime)
+    A->>P: 基于 skill 与上下文请求规划
+    P-->>A: 返回 plan / tools / 行为意图
+    A-->>TM: 返回 ActionSignal (例如 YIELD_READY)
+    TM->>T: 落地 Task.status / anchors / action 栈
+
+    Note over C,P: [2. 阅读任务正常推进]
+    loop 每个执行步长
+        S->>T: 选择 Reading Task 进入 FOCUS
+        S->>A: execute(...)
+        A->>P: 规划下一步阅读动作
+        P-->>A: 返回阅读结果与下一步意图
+        A-->>TM: ActionSignal = YIELD_READY
+        TM->>T: Reading 保持 READY，等待下次调度
+    end
+
+    Note over C,P: [3. QQ 新消息作为外部信号进入]
+    C->>I: 收到 QQ 消息 / @消息 / 上下文注入
+    I->>T: 按 target_id / cortex 查找相关 Task
+    T-->>I: 返回 QQ Task / 相关挂起 Task
+
+    Note over C,P: [4. 后台感知分发]
+    I->>A: 对非执行态 Action 调用 on_perception(event)
+    A-->>TM: 返回 ActionSignal (例如 WAKE_READY / UPDATE_ANCHOR / NOOP)
+    TM->>T: 更新 Task 状态或锚点
+
+    Note over C,P: [5. 发生抢占]
+    S->>T: 重新评估当前 READY 任务优先级
+    T-->>S: QQ Task 优先级更高
+    S->>T: 当前 FOCUS Task -> SUSPENDED
+    S->>T: QQ Task -> FOCUS
+
+    Note over C,P: [6. QQ 对话执行]
+    S->>A: execute(...)
+    A->>P: 基于聊天 skill 与上下文规划
+    P-->>A: 返回回复 / 工具调用 / 下一步意图
+    A-->>TM: ActionSignal = YIELD_BACKGROUND 或 BLOCK
+    TM->>T: QQ Task 进入 BACKGROUND 或 BLOCKED
+
+    Note over C,P: [7. 子任务裂变]
+    A->>P: 发现需要搜索资料
+    P-->>A: 返回 PUSH_ACTION / CREATE_TASK / 工具计划
+    A-->>TM: 返回 ActionSignal
+    TM->>T: 创建新任务或压入新 Action
+
+    Note over C,P: [8. 恢复原任务]
+    S->>T: 当前高优任务结束或退入 BACKGROUND
+    S->>T: 优先尝试恢复 SUSPENDED 任务
+    T-->>S: 返回 Reading Task
+    S->>T: Reading Task -> FOCUS
+    S->>A: execute(...)
+    A->>P: 从断点上下文继续规划
+    P-->>A: 返回下一步阅读意图
+    A-->>TM: ActionSignal = YIELD_READY
+    TM->>T: Reading 继续参与轮询
+```
