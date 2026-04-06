@@ -4,7 +4,7 @@ from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.common.event_model.info_data import ConversationInfo
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class QQChatAPI:
     """

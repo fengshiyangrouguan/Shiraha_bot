@@ -62,6 +62,25 @@ class QQChatEventProcessor:
     async def post_event_to_queue(self, event: Event) -> Any:
         await self.event_queue.put(event)
         return
+    
+    async def _enrich_event_social_tags(self, event: Event):
+        """
+        为事件添加社交语义标签：at_me, mentioned_me
+        """
+        content = event.event_data.LLM_plain_text or ""
+        
+
+        if event.event_type == "message":
+            # 1. 检测 @提及 (At-Mention)
+            nicknames = self.world_model.bot_nickname
+            is_mentioned = any(name.lower() in content.lower() for name in nicknames)
+            if event.event_data.metadata.get("at_user") and self.bot_id in event.event_data.metadata["at_user"]:
+                event.add_tag("at_me")
+            elif event.event_data.metadata.get("at_user") and "all" in event.event_data.metadata["at_user"]:
+                event.add_tag("at_me")
+            elif is_mentioned:
+                event.add_tag("mentioned_me")
+                
 
     async def process_event(self, event: Event):
         """
@@ -80,7 +99,8 @@ class QQChatEventProcessor:
         # 3. 预处理事件数据，生成 LLM 纯文本
         if event.event_type == "message":
             await event.event_data.process_to_context()
-        
+            self._enrich_event_social_tags(event)  # 添加社交语义标签
+
         # 4. 更新 QQChatStream 的内部状态 (滑动窗口、未读计数等)
         await chat_stream.add_event(event)
 

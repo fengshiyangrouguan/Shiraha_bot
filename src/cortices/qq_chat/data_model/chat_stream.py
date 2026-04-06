@@ -10,6 +10,7 @@ from src.common.event_model.info_data import ConversationInfo
 
 from src.common.di.container import container
 from src.common.database.database_manager import DatabaseManager
+from src.agent.world_model import WorldModel
 from src.common.database.database_model import UserInfoDB, ConversationInfoDB, EventDB
 
 # 定义滑动窗口大小常量
@@ -28,6 +29,7 @@ class QQChatMessage(BaseModel):
     user_id: Optional[str] = None
     content: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    tags: List[str] = Field(default_factory=list)
     is_replyed:bool = False
 
 class QQChatStream(BaseModel):
@@ -36,6 +38,7 @@ class QQChatStream(BaseModel):
     这个对象将被保存在 WorldModel 中，作为 Cortex 内部处理的主要数据单元。
     """
     database_manager:DatabaseManager = container.resolve(DatabaseManager)
+    world_model:WorldModel = container.resolve(WorldModel)
     stream_id: str = Field(..., description="唯一的流 ID，直接使用conversation_id")
     bot_id: Optional[str] = None
     conversation_info:ConversationInfo
@@ -58,9 +61,25 @@ class QQChatStream(BaseModel):
     unread_count: int = 0
     last_event_timestamp: Optional[int] = None # 最近一个事件的时间戳 (int)
 
+    @property
+    def unreplied_ats(self) -> List[QQChatMessage]:
+        """获取所有未回复且明确 @ 了 Bot 的消息列表 (硬中断)"""
+        return [
+            msg for msg in self.llm_context 
+            if not msg.is_replyed and ("at_me" in msg.tags)
+        ]
+
+    @property
+    def unreplied_mentions(self) -> List[QQChatMessage]:
+        """获取所有未回复且提及了名字（但没 @）的消息列表 (软感知)"""
+        return [
+            msg for msg in self.llm_context 
+            if not msg.is_replyed and "mentioned_me" in msg.tags
+        ]
+        
     class Config:
         arbitrary_types_allowed = True
-
+        
     async def add_event(self, event: Event):
         """
         向聊天流中添加一个新事件，并更新相关状态。
@@ -136,7 +155,8 @@ class QQChatStream(BaseModel):
                 user_cardname=event.user_info.user_cardname if event.user_info else None,
                 user_id=event.user_info.user_id if event.user_info else None,
                 content=event.event_data.LLM_plain_text,
-                timestamp=event.time
+                timestamp=event.time,
+                tags=list(event.tags) if event.tags else []
             )
             self.llm_context.append(chat_message)
             
@@ -238,9 +258,56 @@ class QQChatStream(BaseModel):
         # 使用指定的分隔符连接所有消息行
         return separator.join(history_lines)
     
+    def build_openai_chat_history(self) -> List[Dict[str, str]]:
+        """
+        将 llm_context 转换为 OpenAI 标准消息格式，并处理已回复状态。
+        """
+        messages = []
+        divider_inserted = False
+        
+        if not self.llm_context:
+            return [{"role": "system", "content": "无最近聊天记录"}]
+
+        for msg in self.llm_context:
+            # 1. 处理分割线 (逻辑维持原样，但作为 system 消息插入)
+            if not msg.is_replyed and not divider_inserted:
+                if messages:
+                    messages.append({
+                        "role": "system", 
+                        "content": "—— 以上为已回复历史消息，禁止重复回复 ——"
+                    })
+                divider_inserted = True
+
+            # 2. 确定角色 (Role)
+            is_bot = self.bot_id is not None and str(msg.user_id) == str(self.bot_id)
+            role = "assistant" if is_bot else "user"
+
+            # 3. 构造内容 (Content)
+            # 对于非机器人消息，保留昵称和消息 ID 方便模型引用
+            sender_name = "你自己" if is_bot else (msg.user_nickname or "未知用户")
+            msg_id = msg.message_id or "未知ID"
+        
+            content = f"[{sender_name} (ID:{msg_id})]: {msg.content or '[空消息]'}"
+            
+            messages.append({
+                "role": role,
+                "content": content
+            })
+
+        # 4. 如果全都是已读，末尾补一个提示
+        if not divider_inserted and messages:
+            messages.append({
+                "role": "system", 
+                "content": "—— 以上为已回复的历史消息，禁止重复回复 ——"
+            })
+
+        return messages
+    
     def mark_as_replyed(self):
         for i, msg in enumerate(self.llm_context):
             msg.is_replyed = True
+            self._msg_count = 0
+            self._new_message_event.clear() 
 
     def get_new_message_event(self) -> asyncio.Event:
         return self._new_message_event

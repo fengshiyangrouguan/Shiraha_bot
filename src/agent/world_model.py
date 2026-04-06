@@ -1,15 +1,61 @@
 # src/agent/world_model.py
 import time
 from collections import deque
-from typing import List, Dict, Any, Deque, Optional, Type
-from pydantic import BaseModel # 导入 BaseModel 用于类型提示和校验
+from typing import List, Dict, Any, Deque, Optional
+from pydantic import BaseModel  # 导入 BaseModel 用于类型提示和校验
 
 # 导入配置
 from src.common.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.logger import get_logger
+from src.core.task.task_store import TaskStore as CoreTaskStore
+
+try:
+    from src.core.memory import UnifiedMemory
+    MEMORY_AVAILABLE = True
+except ImportError:
+    MEMORY_AVAILABLE = False
 
 logger = get_logger("world_model")
+
+
+class TaskSnapshotStore:
+    """
+    轻量任务快照仓库。
+
+    旧版 WorldModel 依赖已经删除的 `src.agent.task` 模块来做任务摘要缓存，
+    这会直接阻断新的事件驱动主链启动。
+    这里改为一个最小但稳定的内联实现，只负责：
+    1. 从 core.task.Task 读取关键字段。
+    2. 为 Planner 生成结构化任务摘要。
+    """
+
+    def __init__(self):
+        self._snapshots: Dict[str, Dict[str, Any]] = {}
+
+    def upsert_from_instance(self, task) -> None:
+        """把内核任务实例转换为 Planner 可消费的摘要。"""
+        self._snapshots[task.task_id] = {
+            "id": task.task_id,
+            "task_id": task.task_id,
+            "status": getattr(task.status, "value", str(task.status)),
+            "mode": getattr(task.mode, "value", str(getattr(task, "mode", ""))),
+            "cortex": task.cortex,
+            "target": task.target_id,
+            "target_id": task.target_id,
+            "pri": getattr(task.priority, "value", str(task.priority)),
+            "priority": getattr(task.priority, "value", str(task.priority)),
+            "motive": task.motive,
+            "updated_at": task.updated_at,
+        }
+
+    def summarize(self) -> List[Dict[str, Any]]:
+        """按更新时间倒序返回当前任务快照。"""
+        return sorted(
+            self._snapshots.values(),
+            key=lambda item: item.get("updated_at", 0),
+            reverse=True,
+        )
 
 class WorldModel:
     """
@@ -30,6 +76,7 @@ class WorldModel:
         mood_config = bot_config.mood
         
         self.bot_name: str = persona_config.bot_name
+        self.bot_nickname: List[str] = persona_config.bot_nickname
         self.bot_identity: str = persona_config.bot_identity
         self.bot_personality: str = persona_config.bot_personality
         self.bot_interest: str = ", ".join(persona_config.bot_interest)
@@ -39,26 +86,48 @@ class WorldModel:
         self.motive: str = ""
         self.mood: str = mood_config.initial_mood
         self.energy: int = mood_config.initial_energy
+        self.cortices_summaries: str = ""  # 存储各个 Cortex 的实时状态摘要
+        self.last_observation: str = ""
+        self.current_focus_task: Optional[str] = None
 
         # --- 3. 初始化动态外部感知 ---
         # 使用列表来存储刺激物，方便管理
-        self.notifications: Dict[str,Any] = {}
+        self.notifications: Dict[str, Any] = {}
         self.alerts: List[str] = []
 
         # --- 4. 初始化记忆 ---
-        
-        # 使用字典来存储不同来源的事件流/状态
+
+        # 使用字典来存储不同来源的事件流/状态 (兼容旧代码)
         # 这是 WorldModel 的核心，用于存储各个 Cortex 维护的特定数据，纯内存操作
-        self.cortex_data: Dict[str, BaseModel] = {} 
+        self.cortex_data: Dict[str, BaseModel] = {}
 
+        # 新：统一记忆系统
+        self.unified_memory: Optional[UnifiedMemory] = None
+        if MEMORY_AVAILABLE:
+            try:
+                self.unified_memory = container.resolve(UnifiedMemory)
+            except Exception:
+                pass
+
+        # 短期记忆（保持兼容）
         self.short_term_memory: Deque[str] = deque(maxlen=short_term_memory_max_len)
-        # TODO: 以后来一个随机的初始动作
-        # self.short_term_memory.append(f"[{time.strftime('%H:%M:%S')}] 我刚刚睡醒，感觉有点迷糊，需要一会儿才能完全进入状态。")
-
-        self.long_term_memory = None # 长期记忆占位符
 
         # 心流缓存，缓存一些阅读，编程，等产生的感悟，形成侧回路，避免影响其他cortex
-        self.flow_cache:Deque[str] = deque(maxlen=15)
+        self.flow_cache: Deque[str] = deque(maxlen=15)
+
+        # Prompt 摘要缓存
+        self.task_snapshot_store = TaskSnapshotStore()
+        # 内核任务仓库（生命周期控制）
+        try:
+            self.core_task_store: CoreTaskStore = container.resolve(CoreTaskStore)
+        except Exception:
+            # 容器中尚未注册时，使用内置实例
+            self.core_task_store = CoreTaskStore()
+
+    async def initialize_memory(self, unified_memory: UnifiedMemory):
+        """初始化统一记忆系统"""
+        self.unified_memory = unified_memory
+        logger.info("WorldModel: 统一记忆系统已连接")
 
     async def get_cortex_data(self, key: str) -> Optional[BaseModel]:
         """
@@ -106,8 +175,14 @@ class WorldModel:
 
 
     def update_notification(self, notification: Optional[str] = None, type: Optional[str] = None):
-        self.notifications[type]=notification
+        self.notifications[type] = notification
         logger.info(f"收到新通知 - '{notification}'")
+
+    def set_last_observation(self, observation: Optional[str]) -> None:
+        self.last_observation = (observation or "").strip()
+
+    def get_last_observation(self) -> str:
+        return self.last_observation
 
     def update_internal_state(self, mood: Optional[str] = None, energy_delta: Optional[int] = None):
         """更新 Agent 的内在状态。"""
@@ -119,21 +194,21 @@ class WorldModel:
             print(f"WorldModel: 精力变化 {energy_delta} -> 当前精力: {self.energy}")
 
     def _get_time_period(self) -> str:
-            """根据当前小时返回时间段描述。"""
-            hour = time.localtime().tm_hour
-            
-            if 6 <= hour < 9:
-                return "清晨"
-            elif 9 <= hour < 12:
-                return "上午"
-            elif 12 <= hour < 14:
-                return "中午"
-            elif 14 <= hour < 18:
-                return "下午"
-            elif 18 <= hour < 24:
-                return "晚上"
-            else:  # 0 <= hour < 6
-                return "凌晨"
+        """根据当前小时返回时间段描述。"""
+        hour = time.localtime().tm_hour
+
+        if 6 <= hour < 9:
+            return "清晨"
+        elif 9 <= hour < 12:
+            return "上午"
+        elif 12 <= hour < 14:
+            return "中午"
+        elif 14 <= hour < 18:
+            return "下午"
+        elif 18 <= hour < 24:
+            return "晚上"
+        else:  # 0 <= hour < 6
+            return "凌晨"
             
     def get_current_time_string(self) -> str:
         """获取全中文格式化的时间字符串。"""
@@ -148,6 +223,38 @@ class WorldModel:
         
         return f"现在是{time_format} {week_str} {period}"
 
+    def get_cortices_summaries(self) -> str:
+        return self.cortices_summaries
+
+    # ---------- 新增：任务与注意力摘要 ----------
+    def set_focus_task(self, task_id: Optional[str]):
+        self.current_focus_task = task_id
+
+    async def refresh_task_snapshots(self):
+        """从 core task store 拉取最新任务摘要，为 Planner Prompt 提供结构化输入。"""
+        tasks = await self.core_task_store.list_all()
+        for t in tasks:
+            self.task_snapshot_store.upsert_from_instance(t)
+
+    def get_task_summary_text(self) -> str:
+        items = self.task_snapshot_store.summarize()
+        if not items:
+            return "当前没有活跃任务。"
+        parts = []
+        for item in items:
+            parts.append(
+                f"[{item['status']}] {item['id']} cortex={item['cortex']} target={item['target']} pri={item['pri']}"
+            )
+        return "\n".join(parts)
+
+    def get_focus_summary_text(self) -> str:
+        if not self.current_focus_task:
+            return "当前无焦点任务。"
+        return f"当前注意力: {self.current_focus_task}"
+
+    async def get_active_tasks_structured(self) -> List[Dict[str, Any]]:
+        await self.refresh_task_snapshots()
+        return self.task_snapshot_store.summarize()
 
     def get_context_for_motive(self) -> Dict[str, Any]:
         """
@@ -192,6 +299,19 @@ class WorldModel:
             "mood": self.mood,
             "notifications": notification_str,
             "alert": alert_str or "当前没有紧急警报。",
-            "action_summary": action_summary_str
+            "action_summary": action_summary_str,
+            "current_focus": self.get_focus_summary_text(),
+            "task_summary": self.get_task_summary_text(),
+            "last_observation": self.get_last_observation(),
         }
         return context
+
+    async def get_full_system_state(self) -> Dict[str, Any]:
+        """为 MainPlanner 提供的系统总览。"""
+        active_tasks = await self.get_active_tasks_structured()
+        return {
+            "active_tasks": active_tasks,
+            "notifications": self.notifications,
+            "alerts": self.alerts,
+            "last_observation": self.last_observation,
+        }

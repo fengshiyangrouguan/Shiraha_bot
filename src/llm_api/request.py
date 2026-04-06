@@ -126,6 +126,17 @@ class LLMRequest:
             kwargs=kwargs
         )
 
+    async def execute_messages(self, messages: List[Dict[str, Any]], **kwargs) -> Tuple[str, str]:
+        """
+        执行标准 chat messages 请求。
+        messages 需为形如 [{"role": "...", "content": "..."}] 的列表。
+        """
+        return await self._execute_request_loop(
+            client_method_name="get_response_with_messages",
+            messages=messages,
+            kwargs=kwargs
+        )
+
     async def execute_with_image(self, prompt: str, base64_image_data: str, mime_type: str = 'image/gif', **kwargs) -> Tuple[str, str]:
         """
         执行带图片的LLM请求，返回一个字符串结果。

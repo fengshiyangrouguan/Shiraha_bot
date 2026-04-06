@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find E:/project/Shiraha_bot -name *.md -type f)",
+      "Bash(find E:/project/Shiraha_bot/src -name *.py -type f)",
+      "Bash(ls:*)",
+      "Bash(find /e/project/Shiraha_bot -name *planner*.py -type f)",
+      "Bash(find /e/project/Shiraha_bot -type d -name *cortex* -o -name *plugin*)",
+      "Bash(xargs grep:*)",
+      "Read(//c/Users/22153/.doge/plans/**)",
+      "Bash(touch sleepy-launching-quill-agent-a84ac52c39e6ce3e6.md)",
+      "Bash(find . -name *.md -type f)",
+      "Bash(find E:/project/Shiraha_bot -type d -name *event*)",
+      "Bash(find E:/project/Shiraha_bot -name *main*.py -o -name *entry*.py -o -name *start*.py)",
+      "Bash(find E:/project/Shiraha_bot -name *.py -path */src/* -type f)",
+      "Bash(find E:/project/Shiraha_bot -name *kernel* -type f)",
+      "Bash(find E:/project/Shiraha_bot -name identity.md -o -name *identity* -type f)",
+      "Bash(find E:/project/Shiraha_bot/src/core -name *executor* -o -name *action* -type f)",
+      "Bash(grep -rn 'from src\\\\.cortices\\\\.' E:/project/Shiraha_bot/src --include=*.py)",
+      "Bash(find E:/project/Shiraha_bot/src/cortices -name *.py -type f)",
+      "Bash(while read:*)",
+      "Bash(do grep:*)",
+      "Bash(done)"
+    ]
+  }
+}

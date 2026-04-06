@@ -96,7 +96,7 @@ desktop.ini
 # =========================
 data/invest_data
 src/plugins/utils/policy_final.pt
-note/no_use
+note/
 data/
 logs/
 configs/
@@ -104,3 +104,6 @@ maibot/
 test/book_test/
 express/
 astrbot_plugin_self_learning-main/
+语料库.md
+architecture_attention_scheduler.md
+败犬女主太多了！第一卷.md

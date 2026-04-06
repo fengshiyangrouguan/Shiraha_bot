@@ -1,6 +1,6 @@
 from typing import List # 导入 List
 from pydantic import Field
-from src.cortices.cortex_config_loader import BaseCortexConfigSchema
+from src.cortex_system.cortex_config_loader import BaseCortexConfigSchema
 from src.platform.sources.qq_napcat.config_schema import ConfigSchema # 导入 QQNapcatConfigSchema
 
 class CortexConfigSchema(BaseCortexConfigSchema):

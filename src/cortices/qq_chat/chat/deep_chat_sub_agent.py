@@ -4,7 +4,7 @@ import json
 import asyncio
 from typing import Dict, Any, Optional, TYPE_CHECKING, List
 
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.platform.sources.qq_napcat.adapter import QQNapcatAdapter
 from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.chat_stream import QQChatStream
@@ -22,7 +22,7 @@ from src.common.action_model.action_spec import ActionSpec
 logger = get_logger("qq_deep_chat")
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class DeepChatSubAgent():
     """
@@ -60,7 +60,7 @@ class DeepChatSubAgent():
         else:
             chat_target = f"你正在与用户{conversation_info.conversation_name}进行私聊。"
 
-        return f"""
+        prompt:str =  f"""
 ## 你的身份设定与当前状态:
 - **你的名字**： {name}
 - **你的性格**： {personality}
@@ -92,24 +92,24 @@ class DeepChatSubAgent():
 1. **reply**: 发送/回复消息
 {{
     "action": "reply",
+    "reason": "发送消息的原因/意图"
     "parameters":{{
-        "reason": "发送消息的原因/意图"
     }}
 }}
 
 2. **wait_for_message**: 保持沉默，持续观察聊天
 {{
     "action": "wait_for_message",
+    "reason": "沉默的理由"
     "parameters":{{
-        "reason": "沉默的理由"
     }}
 }}
 
 3. **exit**: 退出深度聊天
 {{
     "action": "exit",
+    "reason": "退出的理由"
     "parameters":{{
-        "reason": "退出的理由"
         "follow_action":{{
             "action":"退出深度聊天后想要执行的行动名称，如果没有则输入“None”"
             "parameters": {{<需要的参数>}}
@@ -124,17 +124,20 @@ class DeepChatSubAgent():
 输出格式示例如下：
 {{
     "action": "行动名称",
+    "reason": "选择行动的理由"
     "parameters": {{<需要的参数>}}
 }}
 
 - **只输出 JSON 代码块**，不要任何多余文字。
 请基于这些内容，选择一个action，生成JSON输出。
 """
-
+ 
+        return prompt
+    
     async def run(self, intent: str, chat_stream: Optional[QQChatStream]= None, available_tools:str = "") -> str:
         conversation_info:ConversationInfo = chat_stream.conversation_info
         logger.info(f"子智能体启动：进入深度对话模式 -> {conversation_info.conversation_name}，初始意图: {intent}")
-        max_loop_len = 15
+        max_loop_len = 30
         loop_len = 0
         summary_logs = []
         should_plan_immediately = True
@@ -142,7 +145,7 @@ class DeepChatSubAgent():
         while loop_len < max_loop_len:
             loop_len += 1            
             try:
-                history = chat_stream.build_chat_history_has_msg_id
+                history = chat_stream.build_chat_history_has_msg_id()
                 new_message_event = chat_stream.get_new_message_event()
                 if not should_plan_immediately:
                     try:
@@ -173,8 +176,7 @@ class DeepChatSubAgent():
                     
                     act_name = action.get("action")
                     parameters = action.get("parameters")
-                    action = ActionSpec(act_name,parameters)
-                    reason = parameters.get("reason", "无")
+                    reason = action.get("reason", "无")
                     logger.info(f"执行动作: {act_name}, 理由: {reason}")
 
                     if act_name == "wait_for_message":
@@ -185,6 +187,7 @@ class DeepChatSubAgent():
 
                     elif act_name == "reply":
                         result = await self.replyer.execute(reason,chat_stream)
+                        chat_stream.mark_as_replyed()
                         summary_logs.append(result)
 
                     elif act_name == "exit":
@@ -194,8 +197,16 @@ class DeepChatSubAgent():
                         follow_up_action = action.parameters.get("follow_action")
                         tool_result = ToolResult(success=True, summary=deep_chat_summary) 
                         if follow_up_action:
-                            tool_result.add_action(follow_up_action)
+                            act_spec = ActionSpec(follow_up_action.get("action"), follow_up_action.get("parameters"))
+                            tool_result.add_action(act_spec)
                         return tool_result
+                    else:
+                        summary_logs.append(result)
+                        deep_chat_summary = await self._summary_action(intent, act_result,history)
+                        act_spec = ActionSpec(act_name, parameters)
+                        cortex_manager:CortexManager = container.resolve(CortexManager)
+                        result = cortex_manager.execute_action(act_spec).summary
+                        summary_logs.append(f"我执行了{act_name}，原因是{reason},结果是{result}")
                         
             
                 except Exception as e:
@@ -210,7 +221,7 @@ class DeepChatSubAgent():
         result = f"我决定退出聊天，我聊天太久了，感觉需要去干点别的了"
         summary_logs.append(result)
         act_result = "\n".join(summary_logs)
-        deep_chat_summary = await self._summary_action(intent, act_result)
+        deep_chat_summary = await self._summary_action(intent, act_result, history)
         return ToolResult(success=True, summary=deep_chat_summary) 
             
     async def _summary_action(self, intent, act_result, history):

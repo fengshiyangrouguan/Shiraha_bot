@@ -1,5 +1,5 @@
 # src/llm_api/model_client/openai_client.py
-from typing import Tuple
+from typing import Any, Dict, List, Tuple
 
 from openai import AsyncOpenAI, APIConnectionError, APIStatusError, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
@@ -44,6 +44,19 @@ class OpenAIClient(BaseClient):
         decorated_func = retry_decorator(self._internal_get_response)
         return await decorated_func(model_config=model_config, prompt=prompt, **kwargs)
 
+    async def get_response_with_messages(self, model_config: ModelConfig, messages: List[Dict[str, Any]], **kwargs) -> str:
+        """
+        直接发送标准 chat messages 列表，包含重试逻辑。
+        """
+        retry_decorator = retry(
+            wait=wait_random_exponential(min=1, max=self.provider_config.retry_interval),
+            stop=stop_after_attempt(self.provider_config.max_retry + 1),
+            retry=retry_if_exception_type((NetworkConnectionError, RateLimitError))
+        )
+
+        decorated_func = retry_decorator(self._internal_get_response_with_messages)
+        return await decorated_func(model_config=model_config, messages=messages, **kwargs)
+
     async def get_response_with_image(self, model_config: ModelConfig, messages: list, **kwargs) -> str:
         """
         核心调用方法，包含重试逻辑。
@@ -64,6 +77,31 @@ class OpenAIClient(BaseClient):
         """
         try:
             messages = [{"role": "user", "content": prompt}]
+            return await self._internal_get_response_with_messages(
+                model_config=model_config,
+                messages=messages,
+                **kwargs,
+            )
+
+        except APIStatusError as e:
+            # 将 openai 的特定异常转换为我们自己的标准异常
+            raise RespNotOkException(status_code=e.status_code, message=e.message) from e
+        except APIConnectionError as e:
+            raise NetworkConnectionError() from e
+        except Exception as e:
+            # 对于其他未知错误，暂时直接抛出，或者也可以封装成一个通用异常
+            raise e
+
+    async def _internal_get_response_with_messages(self, model_config: ModelConfig, messages: List[Dict[str, Any]], **kwargs) -> str:
+        """
+        实际执行标准 chat messages 请求的内部方法。
+        """
+        try:
+            if not isinstance(messages, list):
+                raise ValueError("messages 必须是一个列表")
+            for item in messages:
+                if not isinstance(item, dict):
+                    raise ValueError("messages 中的每一项都必须是字典")
 
             # 分离标准参数和额外参数
             standard_params = {
@@ -102,39 +140,11 @@ class OpenAIClient(BaseClient):
         """
         实际执行多模态请求的内部方法。
         """
-        try:
-            # 分离标准参数和额外参数
-            standard_params = {
-                "model": model_config.model_identifier,
-                "messages": messages,
-                "temperature": kwargs.get("temperature", 0.7),
-                "max_tokens": kwargs.get("max_tokens", 4096),
-            }
-
-            # 合并所有额外参数到一个 extra_body 字典中
-            extra_body = model_config.extra_params.copy()
-            extra_body.update(kwargs.get("extra_body", {}))
-
-            # 最终的请求参数
-            request_params = standard_params
-            if extra_body:
-                request_params["extra_body"] = extra_body
-
-            response = await self.client.chat.completions.create(**request_params, stream=False)
-
-            if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
-                raise EmptyResponseException() # 抛出我们自己的标准异常
-
-            return response.choices[0].message.content.strip()
-
-        except APIStatusError as e:
-            # 将 openai 的特定异常转换为我们自己的标准异常
-            raise RespNotOkException(status_code=e.status_code, message=e.message) from e
-        except APIConnectionError as e:
-            raise NetworkConnectionError() from e
-        except Exception as e:
-            # 对于其他未知错误，暂时直接抛出，或者也可以封装成一个通用异常
-            raise e
+        return await self._internal_get_response_with_messages(
+            model_config=model_config,
+            messages=messages,
+            **kwargs,
+        )
 
 
     async def _internal_get_embedding(self, model_config: ModelConfig, embedding_input: str, **kwargs) -> list[float]:

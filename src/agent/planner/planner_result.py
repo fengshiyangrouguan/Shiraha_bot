@@ -1,15 +1,31 @@
-# src/agent/planner/planner_result.py
-from dataclasses import dataclass
-from src.common.action_model.action_spec import ActionSpec
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+
 
 @dataclass
-class PlanResult:
+class PlannerResult:
     """
-    planner 规划结果的标准化数据结构。
-    这是“规划”阶段的输出，作为“行动”阶段的输入。
-    """
-    reason: str
-    """规划过程中的思考、推理或决策依据。"""
+    新版 Planner 统一输出。
 
-    action: ActionSpec
-    """根据思考最终决定的、要执行的具体行动。"""
+    主 Planner 与回复规划器都应尽量收敛到这个结构：
+    1. `thought` 用于表达面对最新输入时的想法、动机或判断。
+    2. `shell_commands` 是真正要执行的内核指令列表。
+    3. `raw_content` 保留原始输出，便于调试。
+    """
+
+    thought: str = ""
+    shell_commands: List[str] = field(default_factory=list)
+    raw_content: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "thought": self.thought,
+            "shell_commands": list(self.shell_commands),
+            "raw_content": self.raw_content,
+            "metadata": dict(self.metadata),
+        }
+
+
+# 兼容旧命名，避免旧模块导入直接失败。
+PlanResult = PlannerResult

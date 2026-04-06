@@ -2,7 +2,7 @@
 from typing import Dict, Any, TYPE_CHECKING, List
 import json
 from src.common.action_model.tool_result import ToolResult
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.common.di.container import container
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
@@ -18,7 +18,7 @@ logger = get_logger("qq_deep_chat")
 
 if TYPE_CHECKING:
     
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class EnterDeepChatTool(BaseTool):
     """
@@ -82,6 +82,6 @@ class EnterDeepChatTool(BaseTool):
             chat_stream=chat_stream,
             available_tools = available_tools_str
         )
-
+        chat_stream.mark_as_read()  # 标记为已读，结束后续的未读提醒
         # 3. 将子智能体的最终总结作为此工具的结果返回
         return final_result

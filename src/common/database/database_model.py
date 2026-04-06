@@ -145,6 +145,7 @@ class BookDB(SQLModel, table=True):
     )
     last_read_position: Optional[int] = Field(default=0)
     last_read_time: Optional[float] = Field(default=None)
+    total_chunks: Optional[int] = Field(default=None)
     is_finished_reading: Optional[bool] = Field(default=False)
 
 

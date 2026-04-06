@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Dict, Any, Optional, TYPE_CHECKING
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.agent.world_model import WorldModel
 from src.common.action_model.action_spec import ActionSpec
 from src.common.action_model.tool_result import ToolResult
@@ -14,7 +14,7 @@ from collections import deque
 logger = get_logger("reading")
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 class StratReadingTool(BaseTool):
     """

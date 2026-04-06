@@ -1,6 +1,6 @@
 # src/llm_api/model_client/base_client.py
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Type
+from typing import Dict, Any, Type, List
 
 # 导入我们新的、统一的配置和服务
 from src.common.config.schemas.llm_api_config import APIProviderConfig, ModelConfig
@@ -17,6 +17,14 @@ class BaseClient(ABC):
     async def get_response(self, model_config: ModelConfig, prompt: str, **kwargs) -> str:
         """
         发送请求并获取LLM的回复。
+        返回一个字符串结果。
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_response_with_messages(self, model_config: ModelConfig, messages: List[Dict[str, Any]], **kwargs) -> str:
+        """
+        发送标准 chat messages 列表并获取 LLM 的回复。
         返回一个字符串结果。
         """
         raise NotImplementedError

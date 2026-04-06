@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from src.common.database.database_model import ConversationInfoDB, EventDB
 from src.common.di.container import container
-from src.cortices.tools_base import BaseTool
+from src.cortex_system.tools_base import BaseTool
 from src.agent.world_model import WorldModel
 from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
 from src.common.database.database_manager import DatabaseManager
@@ -18,7 +18,7 @@ from src.common.logger import get_logger
 logger = get_logger("qq_chat")
 
 if TYPE_CHECKING:
-    from src.cortices.manager import CortexManager
+    from src.cortex_system.manager import CortexManager
 
 
 class EnterQQAppTool(BaseTool):
@@ -42,7 +42,7 @@ class EnterQQAppTool(BaseTool):
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": "enter_qq_app",
-            "description": "打开/回到QQ的主页面，查看全局会话列表和未读消息并规划后续行动。",
+            "description": "打开QQ的主页面，查看群聊和私聊列表，以及未读消息",
             "parameters": {
                 "type": "object",
                 "properties": {

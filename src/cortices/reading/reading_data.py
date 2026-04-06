@@ -18,12 +18,13 @@ class Book(BaseModel):
     last_read_time: Optional[float] = None
     is_finished_reading: Optional[bool] = False
     chunks: Optional[List[str]] = Field(default_factory=list)
+    total_chunks: Optional[int] = None
     current_chunk_index: Optional[int] = 0
 
     @property
     def total_chunks(self) -> int:
         """计算总片段数。"""
-        return len(self.chunks)
+        return self.total_chunks
 
     def get_current_chunk(self) -> str:
         """获取当前要阅读的片段。"""
