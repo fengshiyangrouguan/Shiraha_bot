@@ -245,4 +245,3 @@ main.py
 2. **单注意力头**: Scheduler 选择一个焦点任务执行
 3. **统一上下文**: Mind 系统拼接完整的主脑提示词
 4. **层级优先级**: critical > high > medium > low
-5. **兼容性**: 保留旧的 AgentLoop 接口，内部使用新的 EventLoop

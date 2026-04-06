@@ -5,13 +5,12 @@ Interrupt Handler - 中断处理器
 """
 import asyncio
 import time
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from src.common.logger import get_logger
 from src.common.di.container import container
 from src.core.task.models import Priority
-from src.core.kernel.event_loop import EventLoop, InterruptSignal
 
 logger = get_logger("interrupt_handler")
 
@@ -49,7 +48,7 @@ class InterruptHandler:
         self.interrupt_mask_level: Priority = Priority.LOW
 
         # EventLoop 引用（延迟绑定）
-        self._event_loop: Optional[EventLoop] = None
+        self._event_loop = None
 
         # 信号统计
         self._stats = {
@@ -57,6 +56,15 @@ class InterruptHandler:
             "masked": 0,
             "queued": 0
         }
+
+    def bind_event_loop(self, event_loop) -> None:
+        """
+        在 MainSystem 完成 EventLoop 实例化后进行显式绑定。
+
+        这样可以避免 InterruptHandler 在 import/初始化阶段就去反向依赖 EventLoop，
+        从而打断事件驱动主链的装配顺序。
+        """
+        self._event_loop = event_loop
 
     def _priority_rank(self, priority: Priority) -> int:
         """获取优先级权重"""
@@ -128,12 +136,14 @@ class InterruptHandler:
             # 确保 EventLoop 已初始化
             if self._event_loop is None:
                 try:
+                    from src.core.kernel.event_loop import EventLoop
                     self._event_loop = container.resolve(EventLoop)
                 except Exception:
                     logger.warning("EventLoop 不可用，无法提交信号")
                     return
 
             # 创建中断信号
+            from src.core.kernel.event_loop import InterruptSignal
             interrupt_signal = InterruptSignal(
                 source_cortex=signal.source_cortex,
                 target_id=signal.source_target or f"{signal.source_cortex}_unknown",

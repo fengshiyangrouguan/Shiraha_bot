@@ -75,13 +75,14 @@ class LongTermMemory:
             logger.debug("数据库未启用，返回空结果")
             return []
 
-        # TODO: 实现精确检索
-        SELECT * FROM memory_entries
-        WHERE content LIKE %query%
-        AND (source_cortex = %source_cortex% OR source_cortex = '')
-        AND (source_target = %source_target% OR source_target = '')
-        ORDER BY importance DESC, timestamp DESC
-        LIMIT limit
+        # TODO: 实现精确检索。
+        # 下面原本写的是裸 SQL 草稿，但直接写在 Python 代码里会导致语法错误，
+        # 也会让整个事件驱动主链在 import 阶段就被中断。
+        #
+        # 未来真正落库时，建议实现等价语义：
+        # 1. 基于 content 做模糊匹配。
+        # 2. 可选按 source_cortex/source_target 做过滤。
+        # 3. 按 importance、timestamp 倒序返回前 limit 条。
 
         logger.debug(f"检索长期记忆: query={query[:20]}... limit={limit}")
         return []
@@ -91,9 +92,8 @@ class LongTermMemory:
         if not self._db_enabled:
             return []
 
-        # TODO: 实现 ID 检索
-        SELECT * FROM memory_entries
-        WHERE memory_id IN (%memory_ids%)
+        # TODO: 实现按 ID 批量检索。
+        # 真实实现时应使用参数化查询，而不是直接拼接 memory_ids。
 
         return []
 
@@ -110,8 +110,8 @@ class LongTermMemory:
         if not self._db_enabled:
             return False
 
-        # TODO: 实现删除
-        DELETE FROM memory_entries WHERE memory_id = %memory_id%
+        # TODO: 实现删除。
+        # 真实实现时应删除数据库中的记录，并保证和向量存储状态一致。
 
         # 同时删除向量存储中的向量
         if self._vector_store_enabled:
@@ -147,8 +147,7 @@ class LongTermMemory:
         if not self._db_enabled:
             return 0
 
-        # TODO: 实现计数
-        # SELECT COUNT(*) FROM memory_entries
+        # TODO: 实现数据库计数查询。
         return 0
 
     def is_enabled(self) -> bool:

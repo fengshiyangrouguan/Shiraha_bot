@@ -1,16 +1,14 @@
 # src/agent/world_model.py
 import time
 from collections import deque
-from typing import List, Dict, Any, Deque, Optional, Type
+from typing import List, Dict, Any, Deque, Optional
 from pydantic import BaseModel  # 导入 BaseModel 用于类型提示和校验
 
 # 导入配置
 from src.common.di.container import container
 from src.common.config.schemas.bot_config import BotConfig
 from src.common.logger import get_logger
-from src.agent.task import TaskPriority, TaskRecord, TaskStatus, TaskStore
 from src.core.task.task_store import TaskStore as CoreTaskStore
-from src.core.task.models import TaskInstance
 
 try:
     from src.core.memory import UnifiedMemory
@@ -19,6 +17,45 @@ except ImportError:
     MEMORY_AVAILABLE = False
 
 logger = get_logger("world_model")
+
+
+class TaskSnapshotStore:
+    """
+    轻量任务快照仓库。
+
+    旧版 WorldModel 依赖已经删除的 `src.agent.task` 模块来做任务摘要缓存，
+    这会直接阻断新的事件驱动主链启动。
+    这里改为一个最小但稳定的内联实现，只负责：
+    1. 从 core.task.Task 读取关键字段。
+    2. 为 Planner 生成结构化任务摘要。
+    """
+
+    def __init__(self):
+        self._snapshots: Dict[str, Dict[str, Any]] = {}
+
+    def upsert_from_instance(self, task) -> None:
+        """把内核任务实例转换为 Planner 可消费的摘要。"""
+        self._snapshots[task.task_id] = {
+            "id": task.task_id,
+            "task_id": task.task_id,
+            "status": getattr(task.status, "value", str(task.status)),
+            "mode": getattr(task.mode, "value", str(getattr(task, "mode", ""))),
+            "cortex": task.cortex,
+            "target": task.target_id,
+            "target_id": task.target_id,
+            "pri": getattr(task.priority, "value", str(task.priority)),
+            "priority": getattr(task.priority, "value", str(task.priority)),
+            "motive": task.motive,
+            "updated_at": task.updated_at,
+        }
+
+    def summarize(self) -> List[Dict[str, Any]]:
+        """按更新时间倒序返回当前任务快照。"""
+        return sorted(
+            self._snapshots.values(),
+            key=lambda item: item.get("updated_at", 0),
+            reverse=True,
+        )
 
 class WorldModel:
     """
@@ -79,7 +116,7 @@ class WorldModel:
         self.flow_cache: Deque[str] = deque(maxlen=15)
 
         # Prompt 摘要缓存
-        self.task_snapshot_store: TaskStore = TaskStore()
+        self.task_snapshot_store = TaskSnapshotStore()
         # 内核任务仓库（生命周期控制）
         try:
             self.core_task_store: CoreTaskStore = container.resolve(CoreTaskStore)

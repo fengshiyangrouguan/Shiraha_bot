@@ -1,425 +1,448 @@
 # src/cortices/qq_chat/cortex.py
-import asyncio
-from typing import Any, Dict, Optional, List
 import time
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
-from src.common.logger import get_logger
-from src.cortex_system.base_cortex import BaseCortex, CortexSignal
-from src.cortex_system.tools_base import BaseTool
-from .config.config_schema import CortexConfigSchema
-from .tools.basic_tools import (
-    SendMessageTool,
-    GetMessagesTool,
-    GetConversationInfoTool,
-    QuickReplyTool
-)
-from .bridge import get_or_create_bridge, clear_bridge
 
 from src.common.di.container import container
-from src.core.memory import UnifiedMemory
+from src.common.logger import get_logger
 from src.common.database.database_manager import DatabaseManager
+from src.core.memory import MemoryType, UnifiedMemory
+from src.cortex_system.base_cortex import BaseCortex
+from src.cortex_system.tools_base import BaseTool
+from src.llm_api.factory import LLMRequestFactory
+from src.platform.platform_manager import PlatformManager
+
+from .tools.basic_tools import (
+    GetConversationInfoTool,
+    GetMessagesTool,
+    MuteConversationTool,
+    QuickReplyTool,
+    SendEmojiTool,
+    SendMessageTool,
+    ViewConversationListTool,
+)
 
 logger = get_logger("qq_chat")
 
 
 class QQChatCortex(BaseCortex):
     """
-    重构后的 QQ 聊天 Cortex
+    QQ 聊天 Cortex。
 
-    职责：
-    - 纯感知和执行
-    - 提供基础工具
-    - 上报标准信号
-    - 桥接旧的 Event 系统
+    新职责边界：
+    1. 只做消息感知、工具执行和信号上报。
+    2. 不再承担旧 Event 系统到通用信号的桥接兼容。
+    3. 会话上下文统一来自本地缓存与 UnifiedMemory。
     """
 
     def __init__(self):
         super().__init__()
         self.adapter = None
-        self.platform_manager = None
-        self.database_manager = None
-        self.llm_request_factory = None
-        self.unified_memory = None
-        self.bridge = None
-
-        # 缓存消息列表
-        self._message_cache: Dict[str, List[Dict]] = {}
         self.adapter_id = ""
 
-    async def setup(
-        self,
-        config: BaseModel,
-        signal_callback=None,
-        skill_manager=None
-    ):
+        self.platform_manager: Optional[PlatformManager] = None
+        self.database_manager: Optional[DatabaseManager] = None
+        self.llm_request_factory: Optional[LLMRequestFactory] = None
+        self.unified_memory: Optional[UnifiedMemory] = None
+
+        # 结构：conversation_id -> [{role, content, ...}]
+        self._message_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._muted_conversations: set[str] = set()
+
+    async def setup(self, config: BaseModel, signal_callback=None, skill_manager=None):
         """
-        初始化 QQ Chat Cortex
+        初始化 QQ Cortex。
+
+        这里会注入依赖、启动平台适配器，并把外部消息统一转换为 CortexSignal。
         """
         self.config = config
-
-        # 保存回调
         self._signal_callback = signal_callback
 
-        # 获取依赖
         try:
-            from src.platform.platform_manager import PlatformManager
             self.platform_manager = container.resolve(PlatformManager)
-        except Exception as e:
-            logger.debug(f"PlatformManager 不可用: {e}")
+        except Exception as exc:
+            logger.debug(f"PlatformManager 不可用: {exc}")
             self.platform_manager = None
 
         try:
             self.database_manager = container.resolve(DatabaseManager)
-        except Exception as e:
-            logger.debug(f"DatabaseManager 不可用: {e}")
+        except Exception as exc:
+            logger.debug(f"DatabaseManager 不可用: {exc}")
             self.database_manager = None
 
         try:
-            self.llm_request_factory = container.resolve("LLMRequestFactory")
-        except Exception as e:
-            logger.debug(f"LLMRequestFactory 不可用: {e}")
+            self.llm_request_factory = container.resolve(LLMRequestFactory)
+        except Exception as exc:
+            logger.debug(f"LLMRequestFactory 不可用: {exc}")
             self.llm_request_factory = None
 
-        # 获取统一记忆系统（如果可用）
         try:
             self.unified_memory = container.resolve(UnifiedMemory)
-        except Exception as e:
-            logger.debug(f"统一记忆系统不可用: {e}")
+        except Exception as exc:
+            logger.debug(f"UnifiedMemory 不可用: {exc}")
             self.unified_memory = None
 
-        # 创建桥接器
-        self.bridge = get_or_create_bridge(self)
-        logger.info("QQ Chat Bridge 已创建")
+        if hasattr(config, "adapter") and self.platform_manager:
+            await self._start_adapter(config.adapter)
 
-        # 启动 adapter（如果配置了）
-        if hasattr(config, 'adapter') and self.platform_manager:
-            try:
-                await self._start_adapter(config.adapter, signal_callback)
-            except Exception as e:
-                logger.error(f"启动 adapter 失败: {e}")
-
-        # 调用父类初始化（会触发能力发现）
         await super().setup(config, signal_callback, skill_manager)
 
     async def teardown(self):
-        """关闭 Cortex"""
+        """关闭 Cortex 并释放适配器资源。"""
         logger.info("正在关闭 QQ Chat Cortex...")
 
-        # 停止 adapter
-        if self.adapter_id and self.database_manager:
+        if self.adapter_id and self.platform_manager:
             try:
-                # 这里需要重新注入容器，因为可能状态已变化
-                from src.platform.platform_manager import PlatformManager
-                platform_manager: PlatformManager = container.resolve(PlatformManager)
-                await platform_manager.shutdown_adapter(self.adapter_id)
-            except Exception as e:
-                logger.error(f"停止 adapter 失败: {e}")
+                await self.platform_manager.shutdown_adapter(self.adapter_id)
+            except Exception as exc:
+                logger.error(f"停止 adapter 失败: {exc}")
             self.adapter_id = ""
 
-        # 清除桥接器
-        clear_bridge(self)
-
-        # 清空消息缓存
         self._message_cache.clear()
-
         await super().teardown()
 
     def get_tools(self) -> List[BaseTool]:
         """
-        提供基础工具列表
-
-        只包含最基础的工具，无复杂逻辑链
+        暴露给系统的基础 QQ 工具。
         """
-        tools = [
+        return [
             SendMessageTool(adapter=self.adapter),
-            GetMessagesTool(adapter=self.adapter, database_manager=self.database_manager),
+            SendEmojiTool(adapter=self.adapter),
+            MuteConversationTool(cortex=self),
+            GetMessagesTool(adapter=self.adapter, database_manager=self.database_manager, cortex=self),
             GetConversationInfoTool(adapter=self.adapter, database_manager=self.database_manager),
+            ViewConversationListTool(cortex=self),
             QuickReplyTool(adapter=self.adapter, llm_request_factory=self.llm_request_factory),
         ]
 
-        return tools
-
     async def get_cortex_summary(self) -> str:
         """
-        获取当前状态摘要
+        返回当前 QQ 会话状态摘要，供 Planner 直接感知。
         """
         conversation_count = len(self._message_cache)
-        active_conversations = [
-            f"{cid} ({len(msgs)}条消息)"
-            for cid, msgs in self._message_cache.items()
-            if msgs
-        ]
-
         summary_parts = [
             "QQ Chat Cortex 状态",
-            f"- 活跃会话: {conversation_count}",
+            f"- 活跃会话数：{conversation_count}",
+            f"- 适配器状态：{'已连接' if self.adapter else '未连接'}",
         ]
 
-        if active_conversations:
-            summary_parts.append(f"- 会话详情: {', '.join(active_conversations[:5])}")
-            if len(active_conversations) > 5:
-                summary_parts.append(f"  (还有 {len(active_conversations) - 5} 个...)")
-
-        # 添加旧系统的状态（如果有）
-        if self.database_manager:
-            try:
-                from src.cortices.qq_chat.data_model.qq_chat_data import QQChatData
-                from src.agent.world_model import WorldModel
-                world_model = container.resolve(WorldModel)
-                qq_chat_data = await world_model.get_cortex_data("qq_chat_data")
-                if qq_chat_data:
-                    old_summary = await qq_chat_data.get_global_perception_report()
-                    if old_summary:
-                        summary_parts.append("\n[旧系统状态]")
-                        summary_parts.append(old_summary)
-            except Exception as e:
-                pass
+        for conversation_id, messages in list(self._message_cache.items())[:5]:
+            summary_parts.append(f"- 会话 {conversation_id}：缓存 {len(messages)} 条消息")
 
         return "\n".join(summary_parts)
 
-    async def _start_adapter(
-        self,
-        adapter_config: BaseModel,
-        signal_callback=None
-    ):
+    async def _start_adapter(self, adapter_config: BaseModel):
         """
-        启动消息适配器
+        启动 QQ 平台适配器，并将平台事件统一送入本 Cortex 的事件处理入口。
         """
-        from src.platform.platform_manager import PlatformManager
-
         if not self.platform_manager:
             raise RuntimeError("PlatformManager 不可用")
 
-        # 定义信号发送方法
-        async def send_signal_to_kernel(event):
-            """将事件发送给内核的信号回调"""
-            if signal_callback:
-                try:
-                    await self._handle_event_as_signal(event)
-                except Exception as e:
-                    logger.error(f"信号处理失败: {e}")
+        async def post_method(event):
+            await self._handle_platform_event(event)
 
-        # 启动 adapter
         self.adapter = await self.platform_manager.register_and_start(
             adapter_config=adapter_config,
-            post_method=send_signal_to_kernel
+            post_method=post_method,
         )
 
         if self.adapter:
             self.adapter_id = self.adapter.adapter_id
             logger.info(f"QQ Adapter 已启动: {self.adapter_id}")
 
-    async def _handle_event_as_signal(self, event: Any):
+    async def _handle_platform_event(self, event: Any):
         """
-        处理事件并转换为信号
-
-        通过桥接器完成转换
+        将平台事件转换为 QQ Cortex 内部的标准消息，再发出内核信号。
         """
-        from src.common.event_model.event import Event
-        # 如果已经是 Event 对象，直接处理
-        # 这里简化处理，直接发出信号
-        msg_content = ""
+        message_payload = self._extract_message_payload(event)
+        conversation_id = message_payload["conversation_id"]
 
-        if hasattr(event, 'event_data') and hasattr(event.event_data, 'LLM_plain_text'):
-            msg_content = event.event_data.LLM_plain_text or ""
+        if conversation_id:
+            self._append_cache_message(
+                conversation_id=conversation_id,
+                role="user",
+                content=message_payload["content"],
+                user_id=message_payload["user_id"],
+                user_nickname=message_payload["user_nickname"],
+                message_id=message_payload["message_id"],
+            )
 
-        user_nickname = ""
-        if hasattr(event, 'user_info') and event.user_info:
-            user_nickname = event.user_info.user_nickname or ""
+        await self._store_message_memory(
+            conversation_id=conversation_id,
+            user_id=message_payload["user_id"],
+            user_nickname=message_payload["user_nickname"],
+            content=message_payload["content"],
+        )
 
-        conversation_id = ""
-        if hasattr(event, 'conversation_info') and event.conversation_info:
-            conversation_id = event.conversation_info.conversation_id or ""
+        if conversation_id in self._muted_conversations:
+            return
 
-        message_id = ""
-        if hasattr(event, 'event_id'):
-            message_id = event.event_id
-
-        # 发送消息信号
         self.emit_signal(
             signal_type="message",
-            content=f"{user_nickname or '未知用户'}: {msg_content[:100]}{'...' if len(msg_content) > 100 else ''}",
+            content=f"{message_payload['user_nickname'] or message_payload['user_id'] or '未知用户'}: {message_payload['content'][:100]}",
             source_target=conversation_id,
-            priority="medium",
-            event_id=message_id,
-            event_type=event.event_type if hasattr(event, 'event_type') else "unknown",
-            tags=list(event.tags) if hasattr(event, 'tags') else []
+            priority=self._infer_priority(event),
+            event_id=message_payload["message_id"],
+            event_type=getattr(event, "event_type", "unknown"),
+            tags=list(getattr(event, "tags", [])),
+            full_content=message_payload["content"],
         )
+
+    def _extract_message_payload(self, event: Any) -> Dict[str, str]:
+        """
+        从平台事件里提取 QQ 消息所需的核心字段。
+
+        保持这里独立，是为了让主事件处理逻辑更清晰，也便于后续做单元测试。
+        """
+        content = ""
+        user_id = ""
+        user_nickname = ""
+        conversation_id = ""
+        message_id = ""
+
+        if hasattr(event, "event_data") and hasattr(event.event_data, "LLM_plain_text"):
+            content = event.event_data.LLM_plain_text or ""
+
+        if hasattr(event, "user_info") and event.user_info:
+            user_id = event.user_info.user_id or ""
+            user_nickname = event.user_info.user_nickname or ""
+
+        if hasattr(event, "conversation_info") and event.conversation_info:
+            conversation_id = event.conversation_info.conversation_id or ""
+
+        if hasattr(event, "event_id"):
+            message_id = event.event_id or ""
+
+        return {
+            "content": content,
+            "user_id": user_id,
+            "user_nickname": user_nickname,
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+        }
+
+    def _infer_priority(self, event: Any) -> str:
+        """
+        依据消息标签推断优先级。
+        """
+        tags = set(getattr(event, "tags", []) or [])
+        if "at_me" in tags or "mentioned_me" in tags:
+            return "high"
+        return "medium"
 
     async def on_message(
         self,
         conversation_id: str,
         content: str,
         user_id: str = "",
-        user_nickname: str = ""
+        user_nickname: str = "",
     ):
         """
-        接收消息（供外部调用）
+        手动接收消息的统一入口，便于测试和外部直接调用。
         """
-        # 添加到缓存
-        if conversation_id not in self._message_cache:
-            self._message_cache[conversation_id] = []
+        self._append_cache_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=content,
+            user_id=user_id,
+            user_nickname=user_nickname,
+        )
 
-        message = {
-            "content": content,
-            "user_id": user_id,
-            "user_nickname": user_nickname or user_id,
-            "timestamp": time.time()
-        }
-        self._message_cache[conversation_id].append(message)
+        await self._store_message_memory(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_nickname=user_nickname,
+            content=content,
+        )
 
-        # 记录到记忆系统
-        if self.unified_memory:
-            from src.core.memory import MemoryType
-            import random
-
-            # 随机决定是否记录到长期记忆（模拟人类的"选择性记忆"）
-            should_longterm = random.random() < 0.3  # 30% 概率记录
-
-            memory_content = f"[QQ:{conversation_id}] {user_nickname or user_id}: {content}"
-            memory_type = MemoryType.LONG_TERM if should_longterm else MemoryType.SHORT_TERM
-
-            await self.unified_memory.store(
-                content=memory_content,
-                memory_type=memory_type,
-                source_cortex="qq",
-                source_target=conversation_id,
-                tags=["message", "qq", "social" if conversation_id else ""],
-                importance=0.3
-            )
-
-        # 发送信号
         self.emit_signal(
             signal_type="message",
-            content=f"{user_nickname or user_id}: {content[:100]}{'...' if len(content) > 100 else ''}",
+            content=f"{user_nickname or user_id or '未知用户'}: {content[:100]}",
             source_target=conversation_id,
-            priority="medium"
+            priority="medium",
+            full_content=content,
         )
 
         logger.debug(f"接收消息: conversation_id={conversation_id}, content={content[:30]}...")
 
-    async def get_recent_messages(
-        self,
-        conversation_id: str,
-        limit: int = 10
-    ) -> List[Dict]:
-        """获取最近的消息"""
+    async def get_recent_messages(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """读取指定会话最近缓存的消息。"""
         messages = self._message_cache.get(conversation_id, [])
         return messages[-limit:] if messages else []
 
     async def clear_message_cache(self, conversation_id: str = ""):
-        """清除消息缓存"""
+        """清空全部或指定会话的缓存消息。"""
         if conversation_id:
             self._message_cache.pop(conversation_id, None)
         else:
             self._message_cache.clear()
 
-    async def get_conversation_context(
-        self,
-        conversation_id: str,
-        limit: int = 10
-    ) -> List[Dict[str, str]]:
+    async def get_conversation_context(self, conversation_id: str, limit: int = 10) -> List[Dict[str, str]]:
         """
-        获取会话上下文（兼容旧系统）
+        基于本地缓存与 UnifiedMemory 构建会话上下文。
+        """
+        context_messages: List[Dict[str, str]] = [
+            {
+                "role": "system",
+                "content": f"这是 QQ 会话 {conversation_id} 的对话上下文。",
+            }
+        ]
 
-        Returns: 统一格式 {role, content}
-        """
-        # 1. 从缓存获取
         cached_messages = await self.get_recent_messages(conversation_id, limit)
-
-        # 2. 从桥接器转换旧系统数据
-        bridge_context = await self.bridge.extract_context_from_old_system(
-            conversation_id=conversation_id,
-            target_id=conversation_id
-        )
-
-        # 3. 合并并转换为标准格式
-        context_messages = []
-
-        # 添加 system 消息
-        context_messages.append({
-            "role": "system",
-            "content": f"这是QQ会话 {conversation_id} 的对话历史。"
-        })
-
-        # 添加缓存消息
         for msg in cached_messages:
-            context_messages.append({
-                "role": "user",
-                "content": f"{msg['user_nickname'] or '未知用户'}: {msg['content']}",
-                "timestamp": str(msg['timestamp'])
-            })
+            context_messages.append(
+                {
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", ""),
+                }
+            )
 
-        # 添加桥接的消息
-        for msg in bridge_context:
-            context_messages.append(msg)
+        if self.unified_memory:
+            try:
+                memories = await self.unified_memory.retrieve(
+                    query="QQ 对话上下文",
+                    source_cortex="qq",
+                    source_target=conversation_id,
+                    limit=max(1, limit // 2),
+                    semantic=False,
+                )
+                for memory in memories:
+                    context_messages.append(
+                        {
+                            "role": "memory",
+                            "content": memory.content,
+                        }
+                    )
+            except Exception as exc:
+                logger.warning(f"检索 QQ 会话记忆失败: {exc}")
 
         return context_messages
 
-    async def send_reply(
-        self,
-        conversation_id: str,
-        content: str
-    ) -> Dict[str, Any]:
+    async def send_reply(self, conversation_id: str, content: str) -> Dict[str, Any]:
         """
-        发送回复
-
-        通过工具或 adapter 发送
+        发送回复，并在成功后同步写入本地缓存。
         """
-        # 尝试通过工具发送
         result = await self.execute_tool("send_message", conversation_id=conversation_id, content=content)
-
         if result.get("success"):
-            # 记录到缓存
-            await self.on_message(conversation_id, content, "你自己")
-
+            self._append_cache_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=content,
+                user_id="self",
+                user_nickname="你自己",
+            )
         return result
 
-    async def run_command(
-        self,
-        command: str,
-        **params
-    ) -> Dict[str, Any]:
+    async def run_command(self, command: str, **params) -> Dict[str, Any]:
         """
-        执行内核指令（通过工具）
-
-        Args:
-            command: 指令名称
-            **params: 指令参数
-
-        Returns:
-            执行结果
+        兼容式命令入口，统一转成基础工具调用。
         """
         try:
             command = command.lower()
 
             if command == "send_message":
                 return await self.execute_tool("send_message", **params)
-            elif command == "get_messages":
+            if command == "get_messages":
                 return await self.execute_tool("get_messages", **params)
-            elif command == "get_conversation_info":
+            if command == "get_conversation_info":
                 return await self.execute_tool("get_conversation_info", **params)
-            elif command == "quick_reply":
+            if command == "quick_reply":
                 return await self.execute_tool("quick_reply", **params)
-            else:
-                return {
-                    "success": False,
-                    "error": f"未知命令: {command}"
-                }
-        except Exception as e:
-            logger.error(f"执行命令失败: {command} - {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+
+            return {"success": False, "error": f"未知命令: {command}"}
+        except Exception as exc:
+            logger.error(f"执行命令失败: {command} - {exc}")
+            return {"success": False, "error": str(exc)}
 
     def get_cortex_state(self) -> Dict[str, Any]:
-        """获取 cortex 状态（用于 Planner 上下文）"""
+        """返回规划器可读取的 Cortex 运行状态。"""
         return {
             "cortex_name": "qq_chat",
             "active_conversations": len(self._message_cache),
             "conversation_ids": list(self._message_cache.keys()),
             "adapter_id": self.adapter_id,
-            "adapter_active": self.adapter is not None
+            "adapter_active": self.adapter is not None,
+            "muted_conversations": list(self._muted_conversations),
         }
+
+    def mute_conversation(self, conversation_id: str) -> None:
+        """将指定会话加入免打扰集合。"""
+        self._muted_conversations.add(conversation_id)
+
+    def get_conversation_list_panel(self) -> Dict[str, Any]:
+        """
+        返回当前会话列表面板。
+        """
+        conversations = []
+        for conversation_id, messages in self._message_cache.items():
+            conversations.append(
+                {
+                    "conversation_id": conversation_id,
+                    "cached_messages": len(messages),
+                    "muted": conversation_id in self._muted_conversations,
+                    "last_message": messages[-1]["content"] if messages else "",
+                }
+            )
+
+        return {
+            "panel": "conversation_list",
+            "total": len(conversations),
+            "items": conversations,
+        }
+
+    def _append_cache_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        user_id: str = "",
+        user_nickname: str = "",
+        message_id: str = "",
+    ) -> None:
+        """
+        写入本地消息缓存。
+
+        这里统一缓存结构，避免各调用路径在上下文字段上继续分裂。
+        """
+        if conversation_id not in self._message_cache:
+            self._message_cache[conversation_id] = []
+
+        sender_name = user_nickname or user_id or ("你自己" if role == "assistant" else "未知用户")
+        self._message_cache[conversation_id].append(
+            {
+                "role": role,
+                "content": f"{sender_name}: {content}",
+                "raw_content": content,
+                "user_id": user_id,
+                "user_nickname": user_nickname,
+                "message_id": message_id,
+                "timestamp": time.time(),
+            }
+        )
+
+    async def _store_message_memory(
+        self,
+        conversation_id: str,
+        user_id: str,
+        user_nickname: str,
+        content: str,
+    ) -> None:
+        """
+        把消息以统一记忆格式写入记忆系统。
+        """
+        if not self.unified_memory or not content:
+            return
+
+        tags = ["message", "qq"]
+        if conversation_id:
+            tags.append("conversation")
+
+        await self.unified_memory.store(
+            content=f"[QQ:{conversation_id}] {user_nickname or user_id or '未知用户'}: {content}",
+            memory_type=MemoryType.SHORT_TERM,
+            source_cortex="qq",
+            source_target=conversation_id,
+            tags=tags,
+            importance=0.3,
+        )

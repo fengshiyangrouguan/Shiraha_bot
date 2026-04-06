@@ -3,11 +3,10 @@ import inspect
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
-from src.agent.world_model import WorldModel
 from src.common.action_model.action_spec import ActionSpec
 from src.common.action_model.tool_result import ToolResult
 from src.common.di.container import container
@@ -20,6 +19,9 @@ from src.llm_api.dto import ToolCall
 
 CORTEX_MANIFEST_FILE = "manifest.json"
 logger = get_logger("cortex")
+
+if TYPE_CHECKING:
+    from src.agent.world_model import WorldModel
 
 
 class CortexManager:
@@ -64,6 +66,7 @@ class CortexManager:
             parameters=parameters,
             required=required,
             source=f"cortex:{tool.__class__.__module__}",
+            metadata={k: v for k, v in tool.metadata.items() if k not in {"name", "description", "parameters", "required"}},
         )
 
         async def _executor(**kwargs):
@@ -72,12 +75,13 @@ class CortexManager:
         self._get_tool_registry().register_tool(descriptor=descriptor, executor=_executor)
         logger.info(f"原生工具 '{tool_name}' 已注册到统一工具表，作用域为 {tool.scope}。")
 
-    async def load_all_cortices(self):
+    async def load_all_cortices(self, signal_callback=None, skill_manager=None):
         logger.info("开始加载所有 Cortex。")
         # cortex_system 目录下存放的是 cortex 系统的核心代码
         # 实际的 cortex 实现文件在 src/cortices 目录下
         cortices_base_path = Path(os.path.join(os.path.dirname(__file__), "..", "cortices"))
-        world_model: WorldModel = container.resolve(WorldModel)
+        from src.agent.world_model import WorldModel
+        world_model: "WorldModel" = container.resolve(WorldModel)
         self._get_tool_registry()
 
         for cortex_dir in cortices_base_path.iterdir():
@@ -124,7 +128,7 @@ class CortexManager:
                 self._cortices[cortex_name] = cortex_instance
 
                 capability_data = manifest.get("capability", {})
-                capability_name = capability_data.get("name", cortex_name)
+                capability_name = capability_data.get("capability_name", cortex_name)
                 self._collected_capability_descriptions.append(capability_name + ":")
                 self._collected_capability_descriptions.extend(
                     capability_data.get("capability_description", [])
@@ -137,7 +141,11 @@ class CortexManager:
                 self._collected_capability_descriptions.append("\n")
                 logger.info(f"发现并实例化 Cortex: '{cortex_name}'")
 
-                await cortex_instance.setup(world_model, validated_config, self)
+                await cortex_instance.setup(
+                    config=validated_config,
+                    signal_callback=signal_callback,
+                    skill_manager=skill_manager,
+                )
 
                 if hasattr(cortex_instance, "get_tools") and callable(cortex_instance.get_tools):
                     for tool in cortex_instance.get_tools():
@@ -201,7 +209,7 @@ class CortexManager:
         return self._get_tool_registry().get_tool_schemas(scopes)
 
     def get_tool_descriptor(self, tool_name: str) -> Optional[ToolDescriptor]:
-        registered = self._get_tool_registry().get(tool)
+        registered = self._get_tool_registry().get(tool_name)
         if not registered:
             return None
         return registered.descriptor
@@ -226,7 +234,8 @@ class CortexManager:
                 final_lines.append(str(item))
 
         summary_str = "\n".join(final_lines)
-        world_model: WorldModel = container.resolve(WorldModel)
+        from src.agent.world_model import WorldModel
+        world_model: "WorldModel" = container.resolve(WorldModel)
         world_model.cortices_summaries = summary_str
 
     @staticmethod
@@ -272,3 +281,35 @@ class CortexManager:
             parameters=tool_call.parameters or {},
         )
         return await self.execute_action(action)
+
+    def get_cortex(self, cortex_name: str) -> Optional[BaseCortex]:
+        """按名称读取已加载的 Cortex 实例。"""
+        return self._cortices.get(cortex_name)
+
+    async def execute_atomic_action(self, cortex_name: str, action_name: str, **kwargs) -> Any:
+        """
+        执行指定 cortex 暴露的原子动作。
+        """
+        registered = self._get_tool_registry().get_tool(action_name)
+        if not registered:
+            raise ValueError(f"未找到原子动作: {cortex_name}.{action_name}")
+
+        metadata = registered.descriptor.metadata or {}
+        if metadata.get("tool_kind") not in {"action", None}:
+            raise ValueError(f"{action_name} 不是可执行原子动作")
+
+        return await self._get_tool_registry().execute_tool(action_name, **kwargs)
+
+    async def execute_panel_view(self, cortex_name: str, panel_name: str, **kwargs) -> Any:
+        """
+        执行指定 cortex 的只读控制面板查看。
+        """
+        registered = self._get_tool_registry().get_tool(panel_name)
+        if not registered:
+            raise ValueError(f"未找到控制面板: {cortex_name}.{panel_name}")
+
+        metadata = registered.descriptor.metadata or {}
+        if metadata.get("tool_kind") != "panel":
+            raise ValueError(f"{panel_name} 不是控制面板查看接口")
+
+        return await self._get_tool_registry().execute_tool(panel_name, **kwargs)

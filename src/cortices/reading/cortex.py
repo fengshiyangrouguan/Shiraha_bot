@@ -5,12 +5,15 @@ import re
 from typing import Optional, TYPE_CHECKING,List
 
 from src.cortex_system.base_cortex import BaseCortex
+from src.cortex_system.tools_base import BaseTool
 from src.cortices.reading.reading_data import ReadingData,Book
+from src.cortices.reading.tools.atomic_tools import MarkBookDormantTool, ReadBookChunkTool, ViewBookshelfTool
 from src.common.di.container import container
 from src.cortices.reading.utils.book_file_process import slice_and_tag_book,load_all_books,save_book_to_db
 from src.common.logger import get_logger
 from src.common.database.database_manager import DatabaseManager
 from src.llm_api.factory import LLMRequestFactory
+from src.agent.world_model import WorldModel
     
 
 # 定义书籍文件存放路径
@@ -30,13 +33,15 @@ class ReadingCortex(BaseCortex):
 
         self.llm_request_factory: Optional[LLMRequestFactory] = None
         self.database_manager: Optional[DatabaseManager] = None
+        self._world_model: Optional[WorldModel] = None
 
         # Agent 当前的阅读任务上下文。同一时间只进行一项阅读任务。
         self.reading_data = ReadingData()
 
-    async def setup(self, world_model, config, cortex_manager):
+    async def setup(self, config, signal_callback=None, skill_manager=None):
         """Cortex 启动时，解析依赖并启动后台书籍处理任务。"""
-        await super().setup(world_model, config, cortex_manager)
+        await super().setup(config, signal_callback, skill_manager)
+        self._world_model = container.resolve(WorldModel)
         self.database_manager = container.resolve(DatabaseManager)
         self.llm_request_factory = container.resolve(LLMRequestFactory)
         await self._world_model.save_cortex_data("reading_data", self.reading_data)  # 初始化时保存空的阅读上下文
@@ -166,3 +171,13 @@ class ReadingCortex(BaseCortex):
 
     async def teardown(self):
         logger.info("ReadingCortex: 正在关闭...")
+
+    def get_tools(self) -> List[BaseTool]:
+        """
+        暴露阅读域的原子动作与只读面板。
+        """
+        return [
+            ViewBookshelfTool(world_model=self._world_model),
+            ReadBookChunkTool(world_model=self._world_model),
+            MarkBookDormantTool(world_model=self._world_model),
+        ]

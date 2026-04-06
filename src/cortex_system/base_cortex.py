@@ -7,6 +7,8 @@ Base Cortex - 重构后的基底类
 3. 上报信号
 4. 初始化时引导 agent 测试能力
 """
+import asyncio
+import inspect
 import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
@@ -99,7 +101,6 @@ class BaseCortex(ABC):
         """Cortex 名称"""
         return self._name.replace("Cortex", "").lower()
 
-    @abstractmethod
     async def setup(self, config: BaseModel, signal_callback=None, skill_manager=None):
         """
         初始化 Cortex
@@ -126,7 +127,6 @@ class BaseCortex(ABC):
 
         logger.info(f"{self._name}: 设置完成")
 
-    @abstractmethod
     async def teardown(self):
         """关闭 Cortex"""
         logger.info(f"{self._name}: 已关闭")
@@ -208,7 +208,11 @@ class BaseCortex(ABC):
         # 调用回调
         if self._signal_callback:
             try:
-                self._signal_callback(signal)
+                callback_result = self._signal_callback(signal)
+                if inspect.isawaitable(callback_result):
+                    # emit_signal 本身是同步方法，因此这里显式调度协程，
+                    # 避免 Cortex 在任意线程或同步工具里发信号时丢失 await。
+                    asyncio.create_task(callback_result)
             except Exception as e:
                 logger.error(f"{self._name}: 信号回调失败: {e}")
 

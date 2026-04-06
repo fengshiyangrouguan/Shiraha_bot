@@ -1,322 +1,306 @@
 """
-Context Builder - 上下文构建器
+Context Builder - 统一上下文构建器
 
-从各个模块收集信息，构建统一上下文。
+这里是新的唯一主链上下文拼接入口。
+它直接面向 MainPlanner，负责把系统身份、运行状态、内核指令说明、
+Cortex 摘要、记忆结果与当前工作上下文动态拼接为标准消息列表。
 """
-from typing import List, Dict, Any, Optional
-from .unified_context import UnifiedContext, ContextMessage, Role
-from src.core.memory import UnifiedMemory, MemoryEntry
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from src.common.di.container import container
 from src.common.logger import get_logger
+from src.core.context.unified_context import Role, UnifiedContext
+from src.core.memory import UnifiedMemory
+from src.cortex_system import CortexManager
+
+if TYPE_CHECKING:
+    from src.agent.world_model import WorldModel
 
 logger = get_logger("context_builder")
 
 
 class ContextBuilder:
     """
-    上下文构建器
+    主规划器上下文构建器。
 
-    从多个来源收集信息，构建供 LLM 使用的统一上下文
+    设计原则：
+    1. 只保留一层真正负责“拼 prompt”的实现，避免 Mind 与 ContextBuilder 双轨并存。
+    2. 对外统一输出 `{role, content}` 结构，内部仍借助 UnifiedContext 做裁剪与聚合。
+    3. 所有动态内容都尽量从当前运行态直接读取，不再依赖旧桥接层或旧 agent_loop。
     """
 
-    def __init__(self, unified_memory: UnifiedMemory):
-        self.memory = unified_memory
+    def __init__(self):
+        self.identity_path = Path("data/identity.md")
+        self.identity_content = self._load_identity()
 
-    async def build_context(
-        self,
-        task_id: str = "",
-        source_cortex: str = "",
-        source_target: str = "",
-        max_tokens: int = 4096,
-        include_system: bool = True,
-        include_memory: bool = True,
-        history_limit: int = 10
-    ) -> UnifiedContext:
+        self.world_model: Optional["WorldModel"] = None
+        self.unified_memory: Optional[UnifiedMemory] = None
+        self.cortex_manager: Optional[CortexManager] = None
+
+        try:
+            from src.agent.world_model import WorldModel
+            self.world_model = container.resolve(WorldModel)
+        except Exception as exc:
+            logger.debug(f"WorldModel 尚未可用: {exc}")
+
+        try:
+            self.unified_memory = container.resolve(UnifiedMemory)
+        except Exception as exc:
+            logger.debug(f"UnifiedMemory 尚未可用: {exc}")
+
+        try:
+            self.cortex_manager = container.resolve(CortexManager)
+        except Exception as exc:
+            logger.debug(f"CortexManager 尚未可用: {exc}")
+
+    def refresh_identity(self):
+        """重新加载人格与系统身份描述。"""
+        self.identity_content = self._load_identity()
+
+    def _load_identity(self) -> str:
         """
-        构建完整上下文
+        加载身份提示词。
 
-        Args:
-            task_id: 关联任务ID
-            source_cortex: 来源域
-            source_target: 来源目标
-            max_tokens: 最大 token 数
-            include_system: 是否包含系统消息
-            include_memory: 是否包含记忆
-            history_limit: 历史消息数量限制
+        如果磁盘上没有 `data/identity.md`，则退回到一个简洁但可运行的默认身份。
+        """
+        if self.identity_path.exists():
+            try:
+                return self.identity_path.read_text(encoding="utf-8").strip()
+            except Exception as exc:
+                logger.warning(f"读取 identity.md 失败，将使用默认身份: {exc}")
 
-        Returns:
-            UnifiedContext 实例
+        return (
+            "# 默认身份\n\n"
+            "你是藤原白羽，一个运行在事件驱动主链上的自主 AI 智能体。\n"
+            "你具备单注意力焦点，会根据外部信号、记忆和当前任务决定下一步 Shell 指令。"
+        )
+
+    async def build_main_context(
+        self,
+        motive: str,
+        previous_observation: str = "",
+        active_tasks: Optional[List[Dict[str, Any]]] = None,
+        notifications: Optional[List[str]] = None,
+        mood: str = "",
+        energy: Optional[int] = None,
+        memory_limit: int = 5,
+        input_source: str = "idle_input",
+        latest_signal: Optional[Dict[str, Any]] = None,
+        debug_request: str = "",
+    ) -> List[Dict[str, str]]:
+        """
+        构建供 MainPlanner 使用的完整上下文。
+
+        输出顺序固定：
+        1. system: 身份 + 状态 + Shell 指令 + Cortex 摘要
+        2. memory: 相关记忆
+        3. user: 当前工作上下文
         """
         context = UnifiedContext()
-        context._max_tokens = max_tokens
 
-        # 1. 添加系统消息
-        if include_system:
-            await self._add_system_messages(context, source_cortex)
+        cortex_summary = await self._build_cortex_summary()
+        system_prompt = "\n\n".join(
+            [
+                self.identity_content,
+                self._build_runtime_prompt(mood=mood, energy=energy),
+                self._build_shell_instruction_prompt(),
+                cortex_summary,
+            ]
+        ).strip()
 
-        # 2. 添加记忆消息
-        if include_memory:
-            await self._add_memory_messages(context, task_id, source_cortex, source_target)
-
-        # 3. 添加历史对话（从记忆中）
-        await self._add_history_messages(context, task_id, source_cortex, source_target, history_limit)
-
-        # 4. 截断以适应 token 限制
-        context.truncate(max_tokens)
-
-        return context
-
-    async def _add_system_messages(self, context: UnifiedContext, cortex: str = ""):
-        """添加系统消息"""
-        # TODO: 从配置加载系统消息
-        # 这里可以加载 persona、skill 等系统消息
-
-        # 默认系统消息
-        default_system = """你是 Shiraha，一个有着人类行为的智能助手。
-
-你的特点：
-- 你有单注意力头，一次只能专注于一件事
-- 你可以同时在意多个任务，但只能执行其中一个
-- 你的行为会根据所处的环境和互动而演化
-- 你可以跨域思考，在不同场景间建立联系"""
-        context.append({
-            "role": Role.SYSTEM.value,
-            "content": default_system,
-            "metadata": {"source": "system_default"}
-        })
-
-        # 如果指定了 cortex，添加 cortex 特定的系统消息
-        if cortex:
-            # TODO: 从 cortex 配置或 skill 文件加载
-            cortex_system = f"你正在 {cortex} 域中工作。"
-            context.append({
+        context.append(
+            {
                 "role": Role.SYSTEM.value,
-                "content": cortex_system,
-                "metadata": {"source": cortex}
-            })
-
-    async def _add_memory_messages(
-        self,
-        context: UnifiedContext,
-        task_id: str,
-        source_cortex: str,
-        source_target: str
-    ):
-        """添加记忆消息"""
-        # 从统一记忆系统检索相关记忆
-        memories = await self.memory.retrieve(
-            query="",
-            task_id=task_id,
-            source_cortex=source_cortex,
-            source_target=source_target,
-            limit=5,
-            semantic=False
+                "content": system_prompt,
+            }
         )
 
+        for memory_message in await self._build_memory_messages(limit=memory_limit):
+            context.append(memory_message)
+
+        context.append(
+            {
+                "role": Role.USER.value,
+                "content": self._build_working_context_prompt(
+                    motive=motive,
+                    previous_observation=previous_observation,
+                    active_tasks=active_tasks or [],
+                    notifications=notifications or [],
+                    input_source=input_source,
+                    latest_signal=latest_signal or {},
+                    debug_request=debug_request,
+                ),
+            }
+        )
+
+        context.truncate(4096)
+        return context.to_list()
+
+    async def _build_cortex_summary(self) -> str:
+        """
+        获取当前已加载 Cortex 的概览。
+
+        这里优先读取 CortexManager 实时汇总后的文本；如果尚未可用，则退回默认说明。
+        """
+        if self.cortex_manager:
+            try:
+                await self.cortex_manager.update_cortices_summaries()
+            except Exception as exc:
+                logger.warning(f"更新 Cortex 摘要失败: {exc}")
+
+        if self.world_model and self.world_model.cortices_summaries:
+            return "## Cortex 状态概览\n\n" + self.world_model.cortices_summaries
+
+        return (
+            "## Cortex 状态概览\n\n"
+            "当前 Cortex 摘要尚未准备完毕，请基于已有任务、通知与记忆谨慎输出 Shell 指令。"
+        )
+
+    def _build_runtime_prompt(self, mood: str = "", energy: Optional[int] = None) -> str:
+        """
+        注入运行态信息，让 Planner 在同一个 system prompt 中掌握环境基线。
+        """
+        now = datetime.now()
+        lines = [
+            "## 当前运行态",
+            f"当前时间：{now.strftime('%Y-%m-%d %H:%M:%S')}",
+            "架构模式：事件驱动主链",
+            "注意力模型：单焦点，多任务待调度",
+            "输出协议：输出 JSON，其中包含 thought 与 shell_commands",
+        ]
+
+        if mood:
+            lines.append(f"当前情绪：{mood}")
+        if energy is not None:
+            lines.append(f"当前能量：{energy}/100")
+
+        return "\n".join(lines)
+
+    def _build_shell_instruction_prompt(self) -> str:
+        """
+        提供内核可识别的主指令说明。
+
+        这里保留高信号、低噪音的命令集，避免 Planner 再依赖旧 Mind 中那套拼接文本。
+        """
+        return """## Kernel Shell 指令说明
+
+你必须输出严格 JSON，而不是纯文本 shell。
+
+可用主命令：
+- `task create --cortex <领域> --target <目标ID> --mode <once|listen|loop|cron> --pri <优先级> --motive "动机"`
+- `task exec --id <任务ID>`
+- `task run --cortex <领域> --action <原子动作> ...`
+- `task view --cortex <领域> --panel <控制面板> ...`
+- `task suspend --id <任务ID>`
+- `task resume --id <任务ID>`
+- `task block --id <任务ID>`
+- `task kill --id <任务ID>`
+- `task adjust_prio --id <任务ID> --pri <优先级>`
+- `memory store --content "内容" --type <记忆类型> --cortex <域> --target <目标>`
+- `memory retrieve --query "查询" --limit <数量>`
+
+优先级：`critical > high > medium > low`
+
+输出规则：
+1. 必须输出 JSON，对象中至少包含：
+   - `thought`: 你的想法、动机或判断
+   - `shell_commands`: shell 命令数组
+2. `shell_commands` 里的每一项必须是一条完整命令字符串。
+3. 未显式查看控制面板前，禁止假设其内部内容。
+4. Skill 与 cortex 信息只基于已加载片段推理，禁止编造未加载能力。
+
+输出示例：
+{
+  "thought": "这条消息先交给回复器监听任务判断是否要回应。",
+  "shell_commands": [
+    "task exec --id reply_listener_qq_main"
+  ]
+}"""
+
+    async def _build_memory_messages(self, limit: int) -> List[Dict[str, str]]:
+        """
+        从 UnifiedMemory 拉取近期重要记忆。
+
+        记忆消息使用独立的 `memory` role，方便后续继续区分系统指令与历史经验。
+        """
+        if not self.unified_memory:
+            return []
+
+        try:
+            memories = await self.unified_memory.retrieve(
+                query="最近的重要任务、对话和观察",
+                limit=limit,
+                semantic=True,
+            )
+        except Exception as exc:
+            logger.warning(f"检索统一记忆失败: {exc}")
+            return []
+
+        result: List[Dict[str, str]] = []
         for memory in memories:
-            context.append({
-                "role": Role.MEMORY.value,
-                "content": memory.content,
-                "metadata": {
-                    "source_cortex": memory.source_cortex,
-                    "source_target": memory.source_target,
-                    "importance": memory.importance,
-                    "timestamp": memory.timestamp
-                },
-                "timestamp": memory.timestamp,
-                "task_id": memory.related_task_id
-            })
+            result.append(
+                {
+                    "role": Role.MEMORY.value,
+                    "content": f"[{memory.created_at}] {memory.content}",
+                }
+            )
+        return result
 
-    async def _add_history_messages(
+    def _build_working_context_prompt(
         self,
-        context: UnifiedContext,
-        task_id: str,
-        source_cortex: str,
-        source_target: str,
-        limit: int
-    ):
-        """添加历史对话消息"""
-        # TODO: 从对话历史中获取消息
-        # 这里可以合并系统的聊天历史
-
-        # 临时：从记忆中查找历史
-        memories = await self.memory.retrieve(
-            query="chat conversation history",
-            task_id=task_id,
-            source_cortex=source_cortex,
-            source_target=source_target,
-            limit=limit,
-            semantic=False
-        )
-
-        for memory in memories:
-            # 判断消息类型
-            if "user:" in memory.content[:10].lower():
-                role = Role.USER.value
-                content = memory.content.replace("user:", "", 1).strip()
-            elif memory.source_action and "reply" in memory.source_action.lower():
-                role = Role.ASSISTANT.value
-                content = memory.content
-            else:
-                role = Role.MEMORY.value
-                content = memory.content
-
-            context.append({
-                "role": role,
-                "content": content,
-                "metadata": {
-                    "source_cortex": memory.source_cortex,
-                    "timestamp": memory.timestamp
-                },
-                "timestamp": memory.timestamp
-            })
-
-    async def build_planner_context(
-        self,
-        current_motive: str,
-        focus_task_id: str,
-        world_state: Dict[str, Any]
-    ) -> UnifiedContext:
+        motive: str,
+        previous_observation: str,
+        active_tasks: List[Dict[str, Any]],
+        notifications: List[str],
+        input_source: str,
+        latest_signal: Dict[str, Any],
+        debug_request: str,
+    ) -> str:
         """
-        构建 Planner 专用上下文
+        构建当前工作上下文。
 
-        Args:
-            current_motive: 当前动机
-            focus_task_id: 焦点任务ID
-            world_state: 世界状态
-
-        Returns:
-            Planner 使用的上下文
+        这部分固定使用 `user` 角色，等价于把“现在你看到的现场”直接交给 Planner。
         """
-        context = UnifiedContext()
+        lines = ["## 当前工作上下文"]
+        lines.append(f"输入来源：{input_source}")
 
-        # 系统消息：Planner 角色
-        context.append({
-            "role": Role.SYSTEM.value,
-            "content": """你是全局任务调度规划器。
+        if motive:
+            lines.append(f"当前动机：{motive}")
+        else:
+            lines.append("当前动机：暂无明确动机，请根据当前状态判断是否需要创建任务。")
 
-你的职责：
-1. 基于当前动机和世界状态，决定下一步执行什么
-2. 保持单注意力头，同时只能有一个任务获得焦点
-3. 使用 Shell 指令控制整个系统
-4. 产出格式：shell_commands（每行一个指令）
+        if active_tasks:
+            lines.append(f"活跃任务数量：{len(active_tasks)}")
+            for task in active_tasks[:5]:
+                lines.append(
+                    f"- {task.get('id', task.get('task_id', 'unknown'))} | "
+                    f"状态={task.get('status', 'unknown')} | "
+                    f"模式={task.get('mode', 'unknown')} | "
+                    f"域={task.get('cortex', 'unknown')} | "
+                    f"目标={task.get('target', task.get('target_id', 'unknown'))} | "
+                    f"优先级={task.get('pri', task.get('priority', 'unknown'))}"
+                )
+        else:
+            lines.append("当前没有活跃任务。")
 
-可用的主要指令：
-- task create/exec/suspend/block/kill
-- action push/pop/complete
-- memory store/retrieve
-- context load/append
-- signal emit/broadcast
+        if notifications:
+            lines.append("待处理通知：")
+            for item in notifications:
+                lines.append(f"- {item}")
 
-注意：
-- 使用类 Bash 的 Shell 指令格式
-- 指令应该简洁，具体实现由执行层处理"""
-        })
+        if latest_signal:
+            lines.append("最新中断信号：")
+            lines.append(str(latest_signal))
 
-        # 当前动机
-        if current_motive:
-            context.append({
-                "role": Role.OBSERVATION.value,
-                "content": f"当前动机：{current_motive}"
-            })
+        if debug_request:
+            lines.append("调试台输入：")
+            lines.append(debug_request)
 
-        # 焦点任务信息
-        if focus_task_id:
-            context.append({
-                "role": Role.OBSERVATION.value,
-                "content": f"焦点任务：{focus_task_id}"
-            })
+        if previous_observation:
+            lines.append("上一次观察：")
+            lines.append(previous_observation)
 
-        # 世界状态
-        if world_state:
-            state_summary = self._format_world_state(world_state)
-            context.append({
-                "role": Role.OBSERVATION.value,
-                "content": f"世界状态：\n{state_summary}"
-            })
-
-        return context
-
-    def _format_world_state(self, state: Dict[str, Any]) -> str:
-        """格式化世界状态"""
-        parts = []
-        for key, value in state.items():
-            if isinstance(value, (list, dict)):
-                parts.append(f"{key}: {str(value)[:100]}...")
-            else:
-                parts.append(f"{key}: {value}")
-        return "\n".join(parts)
-
-    async def build_evaluator_context(
-        self,
-        task_context: str,
-        metrics: List[str]
-    ) -> UnifiedContext:
-        """
-        构建评估器专用上下文（用于小模型状态评估）
-
-        Args:
-            task_context: 任务上下文
-            metrics: 需要评估的指标列表
-
-        Returns:
-            评估器使用的上下文
-        """
-        context = UnifiedContext()
-
-        context.append({
-            "role": Role.SYSTEM.value,
-            "content": """你是状态评估器。
-
-你的职责：
-1. 基于提供的上下文，评估指定的状态指标
-2. 输出格式：JSON，包含每个指标的数值
-
-指标说明：
-- stress (0-1): 压力值，0=轻松，1=高压
-- focus (0-1): 专注度，0=分散，1=专注
-- energy (0-1): 能量值，0=疲惫，1=充满活力
-- interest (0-1): 兴趣度，0=无趣，1=非常感兴趣"""
-        })
-
-        context.append({
-            "role": Role.USER.value,
-            "content": f"""任务上下文：
-{task_context}
-
-需要评估的指标：
-{", ".join(metrics)}
-
-请以 JSON 格式输出评估结果。"""
-        })
-
-        return context
-
-    def create_signal_message(
-        self,
-        signal_type: str,
-        content: str,
-        source_cortex: str,
-        source_target: str = ""
-    ) -> ContextMessage:
-        """
-        创建信号消息
-
-        Args:
-            signal_type: 信号类型
-            content: 信号内容
-            source_cortex: 来源域
-            source_target: 来源目标
-
-        Returns:
-            ContextMessage 实例
-        """
-        return ContextMessage(
-            role=Role.OBSERVATION.value,
-            content=f"[{signal_type}] {content}",
-            metadata={
-                "signal_type": signal_type,
-                "source": f"{source_cortex}:{source_target}" if source_target else source_cortex
-            },
-            source_cortex=source_cortex,
-            source_target=source_target
-        )
+        lines.append("请基于以上信息输出下一步 JSON 规划结果。")
+        return "\n".join(lines)

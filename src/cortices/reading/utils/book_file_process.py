@@ -50,14 +50,19 @@ def slice_and_tag_book(input_path: str, output_path: str, max_chunk_size: int) -
 
 async def load_all_books(db_manager: DatabaseManager) -> list[BookDB]:
     """从数据库中加载所有已注册书籍的完整信息。"""
-    async with await db_manager.get_session() as session:
-        # 1. 选中整个模型，而不是单个字段
-        stmt = select(BookDB) 
-        result = await session.execute(stmt)
-        # 2. 获取所有的模型对象
-        db_books = result.scalars().all()
+    stmt = select(BookDB)
 
-        materialized_books = []
+    if getattr(db_manager, "_use_async_driver", True):
+        async with await db_manager.get_session() as session:
+            result = await session.execute(stmt)
+            db_books = result.scalars().all()
+    else:
+        session = await db_manager.get_session()
+        with session:
+            result = session.execute(stmt)
+            db_books = result.scalars().all()
+
+    materialized_books = []
     for db_item in db_books:
         # 1. 读取切片文件内容 (假设你把 chunks 存在了本地 txt 里)
         # 如果你之前是用切片工具生成的 tagged.txt，这里需要解析它
@@ -87,6 +92,12 @@ async def save_book_to_db(db_manager: DatabaseManager, book_title: str, format: 
         total_chunks=total_chunks,
         is_finished_reading=is_finished_reading)
 
-    async with await db_manager.get_session() as session:
-        session.add(new_book_db)
-        await session.commit()
+    if getattr(db_manager, "_use_async_driver", True):
+        async with await db_manager.get_session() as session:
+            session.add(new_book_db)
+            await session.commit()
+    else:
+        session = await db_manager.get_session()
+        with session:
+            session.add(new_book_db)
+            session.commit()
