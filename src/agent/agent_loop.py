@@ -36,7 +36,7 @@ class AgentLoop:
 
         self._is_running = False
         self._main_task: Optional[asyncio.Task] = None
-        self.heartbeat_interval = 5
+        self.heartbeat_interval = 1
         self._pipeline_hooks: Dict[str, List[PipelineHook]] = {}
 
     def register_pipeline_hook(self, stage: str, hook: PipelineHook) -> None:

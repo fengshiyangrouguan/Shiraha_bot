@@ -3,7 +3,7 @@
 
 # 是否启用此 Cortex
 enable = true
-bot_id = "352699068"
+bot_id = "3615531488"
 
 [adapter]
 adapter_id = "qq_chat_adapter" # 自用 QQ 账号的适配器 ID
@@ -15,15 +15,11 @@ port = 8080
 # 黑白名单功能配置
 group_list_type = "whitelist" # 可选: whitelist, blacklist
 group_list = [
-    728636404,
-    784394807,
-    871074118,
-    916256590,
-    914615760,
-    1092519589,
+    805130544,
+    1092519589
 ]
 
 private_list_type = "blacklist" # 可选: whitelist, blacklist
-private_list = []
+private_list = [1269171434]
 
 #       

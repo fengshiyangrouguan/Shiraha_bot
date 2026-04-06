@@ -11,6 +11,7 @@ sys.path.insert(0, str(project_root))
 
 from src.platform.platform_manager import PlatformManager
 from src.platform.sources.qq_napcat.service.message_service import NapcatMessageService
+from src.platform.sources.qq_napcat.config_schema import ConfigSchema
 from src.common.event_model.event import Event, ConversationInfo
 from src.common.event_model.event_data import Message, MessageSegment
 from src.common.event_model.info_data import UserInfo,ConversationInfo
@@ -33,15 +34,12 @@ TEST_PLATFORM_ID = "test_qq_instance"
 TEST_PORT = 8081
 event_queue = asyncio.Queue()
 
-mock_platform_config = [
-    {
-        "name": "qq_napcat",
-        "enabled": True,
-        "id": TEST_PLATFORM_ID,
-        "host": "127.0.0.1",
-        "port": TEST_PORT
-    }
-]
+mock_adapter_config = ConfigSchema(
+    platform_type="qq_napcat",
+    adapter_id=TEST_PLATFORM_ID,
+    host="127.0.0.1",
+    port=TEST_PORT
+)
 
 # 1. 模拟的 post_method (接收标准化 Event)
 async def mock_post_method(event: Event):
@@ -131,14 +129,13 @@ async def echo_back_message(message_service:NapcatMessageService, event: Event):
 
 async def main():
     logger.info("初始化平台管理器...")
-    manager = PlatformManager(post_method=mock_post_method, platform_configs=mock_platform_config)
+    manager = PlatformManager()
     
     qq_adapter = None
     message_api = None
     
     try:
-        manager.load_adapters()
-        manager.start_all()
+        await manager.register_and_start(mock_adapter_config, mock_post_method)
         await asyncio.sleep(1) # 给予服务器充足时间启动
 
         # 获取适配器实例和 MessageManager
@@ -177,7 +174,7 @@ async def main():
     finally:
         logger.info("正在优雅地停止所有适配器...")
         if manager:
-            await manager.stop_all()
+            await manager.shutdown_all_adapters()
         logger.info("程序执行完毕。")
 
 

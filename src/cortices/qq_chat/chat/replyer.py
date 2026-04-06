@@ -224,7 +224,7 @@ class QQReplyer:
 
                     elif act_type == "text" and text_content:
                         logger.info(f"[QQReplyer] sending text action: content={text_content}")
-                        segments = [seg.strip() for seg in re.split(r"[,，\s]+", text_content) if seg.strip()]
+                        segments = [seg.strip() for seg in re.split(r"[，,]+|[\r\n]+", text_content) if seg.strip()]
                         await self._send_text_with_segments(conversation_info, segments)
                         sent_any = True
 
